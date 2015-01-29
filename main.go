@@ -10,9 +10,9 @@ import (
 
 func main() {
 	commands := map[string]command{
-		"dump":   dumpCmd(),
-		"report": reportCmd(),
-		//		"scan":    scanCmd(),
+		"dump":    dumpCmd(),
+		"report":  reportCmd(),
+		"scan":    scanCmd(),
 		"session": sessionCmd(),
 	}
 
@@ -46,7 +46,7 @@ func main() {
 
 const examples = `
 examples:
-  korra sessions -targets=path/to/sessions > overall-status.log
+  korra sessions -dir=path/to/sessions > overall-status.log
   korra report -inputs='path/to/results/*.bin' -reporter=json > metrics.json
   korra report -inputs='path/to/results' -reporter=plot > plot.html
 `

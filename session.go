@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -19,61 +18,8 @@ import (
 	"github.com/cwinters/korra/lib"
 )
 
-type scanOpts struct {
-	scanf   string
-	verbose bool
-}
-
-func scanCmd() command {
-	fs := flag.NewFlagSet("korra scan", flag.ExitOnError)
-	opts := &scanOpts{}
-	fs.StringVar(&opts.scanf, "file", "", "File to scan and check targets")
-	fs.BoolVar(&opts.verbose, "verbose", false, "Display all targets, not just errored ones")
-
-	return command{fs, func(args []string) error {
-		fs.Parse(args)
-		return scan(opts)
-	}}
-}
-
-func scan(opts *scanOpts) error {
-	f, err := file(opts.scanf, false)
-	if err != nil {
-		return fmt.Errorf("Error opening file to scan: %s", err)
-	}
-	script, err := korra.CheckScript(f)
-	if err != nil {
-		return fmt.Errorf("Error reading file: %s", err)
-	}
-	for idx, action := range *script.Actions {
-		if opts.verbose {
-			target := action.Target
-			var message string
-			if target.Comment != "" {
-				message = fmt.Sprintf("  COMMENT: %s", target.Comment)
-			} else if target.PauseTime > 0 {
-				message = fmt.Sprintf("  PAUSE %d ms", target.PauseTime)
-			} else {
-				pollingMessage := "NO"
-				if target.Poller.Active {
-					pollingMessage = fmt.Sprintf("YES, %s", target.Poller.ToString())
-				}
-				message = fmt.Sprintf("  Method %s\n  URL %s\n  Polling? %s", target.Method, target.URL, pollingMessage)
-			}
-			validMessage := "YES"
-			if action.Error != nil {
-				validMessage = fmt.Sprintf("NO; %s", action.Error)
-			}
-			fmt.Printf("%d (line %d) - Valid? %s\n%s\n", idx, action.Line, validMessage, message)
-		} else if action.Error != nil {
-			fmt.Printf("Line %d: %s\n-----\n%s\n-----\n", action.Line, action.Error, action.Raw)
-		}
-	}
-	return nil
-}
-
 func sessionCmd() command {
-	fs := flag.NewFlagSet("korra session", flag.ExitOnError)
+	fs := flag.NewFlagSet("korra sessions", flag.ExitOnError)
 	opts := &sessionOpts{
 		headers: headers{http.Header{}},
 		laddr:   localAddr{&korra.DefaultLocalAddr},
@@ -114,32 +60,16 @@ type sessionOpts struct {
 // session validates the attack arguments, sets up the
 // required resources, launches the attack and writes the results
 func session(opts *sessionOpts) error {
-	files := map[string]io.Reader{}
-	for _, filename := range []string{opts.certf} {
-		if filename == "" {
-			continue
-		}
-		f, err := file(filename, false)
+	tlsc := *korra.DefaultTLSConfig
+	if opts.certf != "" {
+		certf, err := file(opts.certf, false)
 		if err != nil {
-			return fmt.Errorf("error opening %s: %s", filename, err)
+			return fmt.Errorf("error opening %s: %s", opts.certf, err)
 		}
-		defer f.Close()
-		files[filename] = f
-	}
-
-	var (
-		err      error
-		sessions []*korra.Session
-	)
-
-	var cert []byte
-	if certf, ok := files[opts.certf]; ok {
+		var cert []byte
 		if cert, err = ioutil.ReadAll(certf); err != nil {
 			return fmt.Errorf("error reading %s: %s", opts.certf, err)
 		}
-	}
-	tlsc := *korra.DefaultTLSConfig
-	if opts.certf != "" {
 		if tlsc.RootCAs, err = certPool(cert); err != nil {
 			return err
 		}
@@ -152,17 +82,17 @@ func session(opts *sessionOpts) error {
 		korra.TLSConfig(&tlsc),
 		korra.KeepAlive(opts.keepalive),
 	}
-	sessionPattern := fmt.Sprintf("%s/*.txt", opts.sessiond)
-	for _, sessionFile := range globInputs(sessionPattern) {
+	sessionFiles := globInputs(fmt.Sprintf("%s/*.txt", opts.sessiond))
+	sessions := make([]*korra.Session, len(sessionFiles))
+	for idx, sessionFile := range sessionFiles {
 		reader, err := file(sessionFile, false)
 		if err != nil {
 			return fmt.Errorf("error reading session file %s: %s", sessionFile, err)
 		}
-		session, err := korra.NewSession(sessionFile, reader, sessionOptions)
+		sessions[idx], err = korra.NewSession(sessionFile, reader, sessionOptions)
 		if err != nil {
-			return fmt.Errorf("Error reading user script %s: %s", sessionFile, err)
+			return fmt.Errorf("Error creating session script %s: %s", sessionFile, err)
 		}
-		sessions = append(sessions, session)
 	}
 
 	var wg sync.WaitGroup
