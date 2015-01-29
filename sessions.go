@@ -18,9 +18,9 @@ import (
 	"github.com/cwinters/korra/lib"
 )
 
-func sessionCmd() command {
+func sessionsCmd() command {
 	fs := flag.NewFlagSet("korra sessions", flag.ExitOnError)
-	opts := &sessionOpts{
+	opts := &sessionsOpts{
 		headers: headers{http.Header{}},
 		laddr:   localAddr{&korra.DefaultLocalAddr},
 	}
@@ -46,7 +46,7 @@ var (
 )
 
 // sessionOpts aggregates the session function command options
-type sessionOpts struct {
+type sessionsOpts struct {
 	certf     string
 	headers   headers
 	keepalive bool
@@ -59,7 +59,7 @@ type sessionOpts struct {
 
 // session validates the attack arguments, sets up the
 // required resources, launches the attack and writes the results
-func session(opts *sessionOpts) error {
+func session(opts *sessionsOpts) error {
 	tlsc := *korra.DefaultTLSConfig
 	if opts.certf != "" {
 		certf, err := file(opts.certf, false)

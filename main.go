@@ -10,10 +10,10 @@ import (
 
 func main() {
 	commands := map[string]command{
-		"dump":    dumpCmd(),
-		"report":  reportCmd(),
-		"scan":    scanCmd(),
-		"session": sessionCmd(),
+		"dump":     dumpCmd(),
+		"report":   reportCmd(),
+		"scan":     scanCmd(),
+		"sessions": sessionsCmd(),
 	}
 
 	flag.Usage = func() {
