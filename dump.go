@@ -15,8 +15,8 @@ func dumpCmd() command {
 	dumper := fs.String("dumper", "", "Dumper [json, csv]")
 	inputs := fs.String("inputs", "", "Input files as glob")
 	output := fs.String("output", "stdout", "Output file")
-	include := fs.String("include", "", "(TBD) Filter expression(s) to include only certain transactions")
-	exclude := fs.String("exclude", "", "(TBD) Filter expression(s) to exclude transactions")
+	//	include := fs.String("include", "", "(TBD) Filter expression(s) to include only certain transactions")
+	//	exclude := fs.String("exclude", "", "(TBD) Filter expression(s) to exclude transactions")
 
 	return command{fs, func(args []string) error {
 		fs.Parse(args)

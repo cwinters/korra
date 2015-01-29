@@ -21,13 +21,14 @@ func file(name string, create bool) (*os.File, error) {
 	}
 }
 
-func globInputs(spec string) (files []string) {
+func globInputs(spec string) []string {
 	info, err := os.Stat(spec)
 	if err == nil && info.IsDir() {
 		spec = fmt.Sprintf("%s/*.txt", spec)
 	}
+	var files []string
 	if strings.Contains(spec, "*") {
-		if files, err := filepath.Glob(spec); err != nil {
+		if files, err = filepath.Glob(spec); err != nil {
 			panic(fmt.Sprintf("Bad glob %s: %s", spec, err))
 		}
 	} else {
@@ -36,13 +37,14 @@ func globInputs(spec string) (files []string) {
 	return files
 }
 
-func globResults(spec string) (files []string) {
+func globResults(spec string) []string {
 	info, err := os.Stat(spec)
 	if err == nil && info.IsDir() {
 		spec = fmt.Sprintf("%s/*.bin", spec)
 	}
+	var files []string
 	if strings.Contains(spec, "*") {
-		if files, err := filepath.Glob(spec); err != nil {
+		if files, err = filepath.Glob(spec); err != nil {
 			panic(fmt.Sprintf("Bad glob %s: %s", spec, err))
 		}
 	} else {

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -12,23 +11,22 @@ import (
 	"strings"
 )
 
-type SessionAction struct {
-	Raw    string
-	Line   int
-	Target *Target
-}
-
-func (action *SessionAction) BadLine(offset int, message string) error {
-	return fmt.Errorf("[Line: %d] %s", action.Line+offset, message)
-}
-
 type SessionScript struct {
-	Actions []SessionAction
+	Actions *[]SessionAction
 	Current int
 }
 
 func (script *SessionScript) ActionCount() int {
-	return len(script.Actions)
+	return len(*script.Actions)
+}
+
+func (script *SessionScript) IsValid() bool {
+	for _, action := range *script.Actions {
+		if action.Error != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (script *SessionScript) Progress() float32 {
@@ -39,25 +37,70 @@ func (script *SessionScript) ProgressLabel() string {
 	return fmt.Sprintf("%d of %d", script.Current+1, script.ActionCount())
 }
 
+// NewScript creates a new script of SessionAction objects from the given
+// reader, ensuring that each action is a valid one -- see `CreateTarget`
+// for the validation checks it performs. Therefore the returned error will be either
+// an IO error (from reading the script) or the first invalid action it
+// encounters.
+func NewScript(script io.Reader) (*SessionScript, error) {
+	actions, err := ScanActions(script)
+	if err != nil {
+		return nil, err
+	}
+	var scriptActions []SessionAction
+	for _, action := range *actions {
+		if err := action.CreateTarget(); err != nil {
+			return nil, err
+		}
+		scriptActions = append(scriptActions, action)
+	}
+	return &SessionScript{Actions: &scriptActions, Current: 0}, nil
+}
+
+// CheckScript creates a new script of SessionAction objects from
+// the given reader and validates all the targets similar to `NewScript`,
+// but it does not halt processing at the first invalid action. Instead it
+// parses and returns all of them and the ones with an error have
+// their `Error` property set. You can also check the validity of
+// the entire script with `IsValid()`
+func CheckScript(script io.Reader) (*SessionScript, error) {
+	if actions, err := ScanActions(script); err != nil {
+		return nil, err
+	} else {
+		for _, action := range *actions {
+			action.CreateTarget()
+		}
+		return &SessionScript{Actions: actions, Current: 0}, nil
+	}
+}
+
 var (
 	supportedMethods = []string{"HEAD", "GET", "PUT", "POST", "PATCH", "OPTIONS"}
 	httpMethod       = regexp.MustCompile(fmt.Sprintf("^(%s)$", strings.Join(supportedMethods, "|")))
 	httpMethodLine   = regexp.MustCompile(fmt.Sprintf("^(POLL\\s+)?(%s)", strings.Join(supportedMethods, "|")))
 )
 
-func NewScript(script io.Reader) (*SessionScript, error) {
-	var actions []SessionAction
-	for _, action := range ScanActions(script) {
-		if err := action.CreateTarget(); err != nil {
-			return nil, err
-		}
-		actions = append(actions, action)
-	}
-	return &SessionScript{Actions: actions, Current: 0}, nil
+type SessionAction struct {
+	Raw    string
+	Line   int
+	Error  error
+	Target *Target
 }
 
+func (action *SessionAction) BadLine(offset int, message string) error {
+	action.Error = fmt.Errorf("[Line: %d] %s", action.Line+offset, message)
+	return action.Error
+}
+
+// CreateTarget parses the string stored in the `SessionAction.Raw`
+// property and checks:
+// * if it's a valid action
+// * that the action's URL is valid (if the action has a URL)
+// * that a header value is specified (if the action lists any request headers)
+// * that the file with the request body exists (if one is specified)
+// * that the polling parameters are valid ones (if polling is being used)
 func (action *SessionAction) CreateTarget() error {
-	tgt := Target{Header: http.Header{}}
+	tgt := NewTarget()
 	lines := strings.Split(action.Raw, "\n")
 	firstLine := strings.TrimSpace(lines[0])
 	var tokens []string
@@ -68,11 +111,11 @@ func (action *SessionAction) CreateTarget() error {
 			return action.BadLine(0, fmt.Sprintf("Expected int as argument to PAUSE, got %s", tokens[1]))
 		}
 		tgt.PauseTime = pauseTime
-		action.Target = &tgt
+		action.Target = tgt
 		return nil
 	} else if strings.HasPrefix(firstLine, "COMMENT") {
 		tgt.Comment = strings.SplitN(firstLine, " ", 2)[1]
-		action.Target = &tgt
+		action.Target = tgt
 		return nil
 	}
 
@@ -92,6 +135,7 @@ func (action *SessionAction) CreateTarget() error {
 		checkUrl = tokens[1]
 	} else {
 		// we'll get polling config in a later line
+		tgt.Poller.Active = true
 		tgt.Method = tokens[1]
 		checkUrl = tokens[2]
 	}
@@ -107,8 +151,14 @@ func (action *SessionAction) CreateTarget() error {
 		if strings.HasPrefix(line, "@") {
 			bodyFile := line[1:]
 			bodyInfo, err := os.Stat(bodyFile)
-			if err != nil {
-				return action.BadLine(idx, fmt.Sprintf("Invalid body file reference '%s': %s", bodyFile, err))
+			if err != nil || bodyInfo.IsDir() {
+				var display string
+				if err != nil {
+					display = fmt.Sprintf("%s", err) // TODO: fix when online, dummy!
+				} else {
+					display = "is a directory, not a file"
+				}
+				return action.BadLine(idx, fmt.Sprintf("Invalid request body reference '%s': %s", bodyFile, display))
 			}
 			tgt.BodyPath = bodyFile
 		} else if strings.HasPrefix(line, "[") {
@@ -128,6 +178,7 @@ func (action *SessionAction) CreateTarget() error {
 			tgt.Header.Add(headerTokens[0], headerTokens[1])
 		}
 	}
+	action.Target = tgt
 	return nil
 }
 
@@ -161,12 +212,15 @@ var (
 //   "=> PAUSE 12345",
 //   "=> COMMENT - this line will be ignored"
 // ]
-func ScanActions(reader io.Reader) []SessionAction {
+func ScanActions(reader io.Reader) (*[]SessionAction, error) {
 	var actions []SessionAction
 	lineNumber := 0
 
 	sc := peekingScanner{src: bufio.NewScanner(reader)}
 	for sc.Scan() {
+		if sc.Err() != nil {
+			return nil, sc.Err()
+		}
 		lineNumber += 1
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || internalCommentCommand.MatchString(line) {
@@ -188,5 +242,5 @@ func ScanActions(reader io.Reader) []SessionAction {
 		action := SessionAction{Raw: strings.Join(current, "\n"), Line: lineNumber}
 		actions = append(actions, action)
 	}
-	return actions
+	return &actions, nil
 }

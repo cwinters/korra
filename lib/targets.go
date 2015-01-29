@@ -15,12 +15,30 @@ import (
 type TargetPoller struct {
 	Active           bool
 	UntilCount       int
-	UntilStatus      *Regexp // cache these?
+	UntilStatus      *regexp.Regexp // cache these?
 	WaitBetweenPolls int
 }
 
+func NewPoller() *TargetPoller {
+	return &TargetPoller{
+		Active:           false,
+		UntilCount:       5,
+		UntilStatus:      regexp.MustCompile("^2\\d\\d$"),
+		WaitBetweenPolls: 1000,
+	}
+}
+
+// FillFromLine takes a line formatted:
+//
+//    [param=value param=value param=value]
+//
+// and fills itself from the parameters, as:
+//
+// * count: The max number of times the poller will poll (default: 5)
+// * status: A regex that will match a HTTP status code indicating when
+//   the poller should halt (default "^2\d\d$")
+// * wait: The time (in milliseconds) to wait between polls (default: 1000)
 func (poller *TargetPoller) FillFromLine(line string) error {
-	poller.Active = true
 	for _, piece := range strings.Split(strings.TrimSpace(line), " ") {
 		param := strings.SplitN(piece, "=", 2)
 		if len(param) != 2 {
@@ -43,12 +61,24 @@ func (poller *TargetPoller) FillFromLine(line string) error {
 	return nil
 }
 
+func (poller *TargetPoller) IsRetryStatus(statusCode int) bool {
+	return !poller.UntilStatus.MatchString(strconv.Itoa(statusCode))
+}
+
 func (poller *TargetPoller) ShouldRetry(requestCount int, statusCode int) bool {
 	return poller.Active &&
 		requestCount <= poller.UntilCount &&
-		!poller.MatchString(strconv.Itoa(statusCode))
-
+		poller.IsRetryStatus(statusCode)
 }
+
+func (poller *TargetPoller) ToString() string {
+	return fmt.Sprintf("[Count=%d Wait=%d Status=%s]",
+		poller.UntilCount, poller.WaitBetweenPolls, poller.UntilStatus.String())
+}
+
+// Targeter is a generator function which returns a new Target
+// or an error on every invocation. It is safe for concurrent use.
+type Targeter func() (*Target, error)
 
 // Target is an HTTP request blueprint.
 type Target struct {
@@ -58,7 +88,11 @@ type Target struct {
 	URL       string
 	BodyPath  string
 	Header    http.Header
-	Poller    TargetPoller
+	Poller    *TargetPoller
+}
+
+func NewTarget() *Target {
+	return &Target{Poller: NewPoller()}
 }
 
 // Body reads the full body specified by the BodyPath and returns a Reader; if
@@ -110,7 +144,7 @@ func (t *Target) Request() (*http.Request, error) {
 	if body, err = t.Body(); err != nil {
 		return nil, err
 	}
-	if req, err := http.NewRequest(t.Method, t.URL, body); err != nil {
+	if req, err = http.NewRequest(t.Method, t.URL, body); err != nil {
 		return nil, err
 	}
 	for k, vs := range t.Header {
