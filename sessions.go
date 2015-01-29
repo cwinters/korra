@@ -89,11 +89,20 @@ func session(opts *sessionsOpts) error {
 		if err != nil {
 			return fmt.Errorf("error reading session file %s: %s", sessionFile, err)
 		}
-		sessions[idx], err = korra.NewSession(sessionFile, reader, sessionOptions)
+		sessions[idx], err = korra.NewSession(sessionFile, reader, opts.sessiond, sessionOptions)
 		if err != nil {
 			return fmt.Errorf("Error creating session script %s: %s", sessionFile, err)
 		}
 	}
+
+	log := os.Stdout
+	logChan := make(chan string)
+	go func(o chan string) {
+		select {
+		case msg := <-o:
+			log.Write([]byte(msg + "\n"))
+		}
+	}(logChan)
 
 	var wg sync.WaitGroup
 
@@ -101,7 +110,7 @@ func session(opts *sessionsOpts) error {
 		wg.Add(1)
 		go func(user *korra.Session) {
 			defer wg.Done()
-			session.Run()
+			session.Run(logChan)
 		}(session)
 	}
 

@@ -45,8 +45,8 @@ type Session struct {
 	running  bool
 }
 
-func NewSession(name string, in io.Reader, opts []func(*Attacker)) (*Session, error) {
-	script, err := NewScript(in)
+func NewSession(name string, in io.Reader, scriptPath string, opts []func(*Attacker)) (*Session, error) {
+	script, err := NewScript(in, scriptPath)
 	if err != nil {
 		return nil, err
 	}
@@ -58,11 +58,11 @@ func NewSession(name string, in io.Reader, opts []func(*Attacker)) (*Session, er
 	}, nil
 }
 
-func (session *Session) Run() {
+func (session *Session) Run(log chan string) {
 	session.running = true
 	enc := NewResultEncoder(session.Name)
 	results := make(chan *Result)
-	go session.process(results)
+	go session.process(results, log)
 	for {
 		select {
 		case result := <-results:
@@ -71,14 +71,14 @@ func (session *Session) Run() {
 		// wait for the next result (or timeout) then wrap up:
 		case <-session.stopper:
 			session.running = false
-			fmt.Fprintf(os.Stderr, "%s: All done or asked to stop, waiting for next result or 5 seconds...\n", session.Name)
+			log <- fmt.Sprintf("%s: All done or asked to stop, waiting for next result or 5 seconds...\n", session.Name)
 			select {
 			case result := <-results:
 				enc.AddResult(result)
 			case <-time.After(5 * time.Second):
 			}
 			enc.Close()
-			fmt.Fprintf(os.Stderr, "%s: ...DONE\n", session.Name)
+			log <- fmt.Sprintf("%s: ...DONE\n", session.Name)
 			return
 		}
 	}
@@ -90,15 +90,15 @@ func (session *Session) Stop() {
 	}
 }
 
-func (session *Session) process(results chan *Result) {
-	for _, action := range *session.Script.Actions {
+func (session *Session) process(results chan *Result, log chan string) {
+	for _, action := range session.Script.Actions {
 		label := fmt.Sprintf("%s (%s)", session.Name, session.Script.ProgressLabel())
 		target := action.Target
 		if target.IsComment() {
-			fmt.Fprintf(os.Stderr, "%s: %s\n", label, target.Comment)
+			log <- fmt.Sprintf("%s: %s\n", label, target.Comment)
 			continue
 		} else if target.IsPause() {
-			fmt.Fprintf(os.Stderr, "%s: Sleeping (%d ms)...\n", label, target.PauseTime)
+			log <- fmt.Sprintf("%s: Sleeping (%d ms)...\n", label, target.PauseTime)
 			select {
 			case <-session.stopper:
 				return
@@ -114,12 +114,12 @@ func (session *Session) process(results chan *Result) {
 		for {
 			timestamp := time.Now()
 			result := session.attacker.hit(targeter, timestamp)
-			fmt.Fprintf(os.Stderr, "%s: %d => %s %s, %d ms\n",
+			log <- fmt.Sprintf("%s: %d => %s %s, %d ms\n",
 				label, result.Code, result.Method, result.URL, int64(result.Latency/time.Millisecond))
 			results <- result
 			if target.Poller.ShouldRetry(requests, int(result.Code)) {
 				pauseMillis := target.Poller.WaitBetweenPolls
-				fmt.Fprintf(os.Stderr, "%s: Pausing for %d ms until retry...\n", label, pauseMillis)
+				log <- fmt.Sprintf("%s: Pausing for %d ms until retry...\n", label, pauseMillis)
 				time.Sleep(time.Duration(pauseMillis) * time.Millisecond)
 				requests = requests + 1
 			} else {

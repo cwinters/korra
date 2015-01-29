@@ -92,7 +92,7 @@ type Target struct {
 }
 
 func NewTarget() *Target {
-	return &Target{Poller: NewPoller()}
+	return &Target{Poller: NewPoller(), Header: http.Header{}}
 }
 
 // Body reads the full body specified by the BodyPath and returns a Reader; if

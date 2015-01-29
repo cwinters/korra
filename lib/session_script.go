@@ -6,22 +6,23 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
 type SessionScript struct {
-	Actions *[]SessionAction
+	Actions []*SessionAction
 	Current int
 }
 
 func (script *SessionScript) ActionCount() int {
-	return len(*script.Actions)
+	return len(script.Actions)
 }
 
 func (script *SessionScript) IsValid() bool {
-	for _, action := range *script.Actions {
+	for _, action := range script.Actions {
 		if action.Error != nil {
 			return false
 		}
@@ -42,19 +43,19 @@ func (script *SessionScript) ProgressLabel() string {
 // for the validation checks it performs. Therefore the returned error will be either
 // an IO error (from reading the script) or the first invalid action it
 // encounters.
-func NewScript(script io.Reader) (*SessionScript, error) {
+func NewScript(script io.Reader, scriptPath string) (*SessionScript, error) {
 	actions, err := ScanActions(script)
 	if err != nil {
 		return nil, err
 	}
-	var scriptActions []SessionAction
-	for _, action := range *actions {
-		if err := action.CreateTarget(); err != nil {
+	var scriptActions []*SessionAction
+	for _, action := range actions {
+		if err := action.CreateTarget(scriptPath); err != nil {
 			return nil, err
 		}
 		scriptActions = append(scriptActions, action)
 	}
-	return &SessionScript{Actions: &scriptActions, Current: 0}, nil
+	return &SessionScript{Actions: scriptActions, Current: 0}, nil
 }
 
 // CheckScript creates a new script of SessionAction objects from
@@ -63,12 +64,12 @@ func NewScript(script io.Reader) (*SessionScript, error) {
 // parses and returns all of them and the ones with an error have
 // their `Error` property set. You can also check the validity of
 // the entire script with `IsValid()`
-func CheckScript(script io.Reader) (*SessionScript, error) {
+func CheckScript(script io.Reader, scriptPath string) (*SessionScript, error) {
 	if actions, err := ScanActions(script); err != nil {
 		return nil, err
 	} else {
-		for _, action := range *actions {
-			action.CreateTarget()
+		for _, action := range actions {
+			action.CreateTarget(scriptPath)
 		}
 		return &SessionScript{Actions: actions, Current: 0}, nil
 	}
@@ -88,7 +89,7 @@ type SessionAction struct {
 }
 
 func (action *SessionAction) BadLine(offset int, message string) error {
-	action.Error = fmt.Errorf("[Line: %d] %s", action.Line+offset, message)
+	action.Error = fmt.Errorf("@ line %d: %s", action.Line+offset, message)
 	return action.Error
 }
 
@@ -99,7 +100,7 @@ func (action *SessionAction) BadLine(offset int, message string) error {
 // * that a header value is specified (if the action lists any request headers)
 // * that the file with the request body exists (if one is specified)
 // * that the polling parameters are valid ones (if polling is being used)
-func (action *SessionAction) CreateTarget() error {
+func (action *SessionAction) CreateTarget(scriptPath string) error {
 	tgt := NewTarget()
 	lines := strings.Split(action.Raw, "\n")
 	firstLine := strings.TrimSpace(lines[0])
@@ -108,7 +109,7 @@ func (action *SessionAction) CreateTarget() error {
 		tokens = strings.SplitN(firstLine, " ", 2)
 		pauseTime, err := strconv.Atoi(strings.TrimSpace(tokens[1]))
 		if err != nil {
-			return action.BadLine(0, fmt.Sprintf("Expected int as argument to PAUSE, got %s", tokens[1]))
+			return action.BadLine(0, fmt.Sprintf("Expected int as argument to PAUSE, got '%s'", tokens[1]))
 		}
 		tgt.PauseTime = pauseTime
 		action.Target = tgt
@@ -125,19 +126,17 @@ func (action *SessionAction) CreateTarget() error {
 		return action.BadLine(0, "Invalid number of arguments for URL command")
 	}
 	var matches []string
-	if matches = httpMethodLine.FindStringSubmatch(firstLine); matches == nil {
+	if matches = httpMethodLine.FindStringSubmatch(firstLine); matches == nil || len(matches) == 0 {
 		return action.BadLine(0, fmt.Sprintf("Invalid HTTP method: %s", tokens[0]))
 	}
-
 	var checkUrl string
-	if len(matches) == 2 {
-		tgt.Method = tokens[0]
-		checkUrl = tokens[1]
-	} else {
-		// we'll get polling config in a later line
-		tgt.Poller.Active = true
+	if matches[1] == "POLL " {
+		tgt.Poller.Active = true // we'll get polling config in a later line
 		tgt.Method = tokens[1]
 		checkUrl = tokens[2]
+	} else {
+		tgt.Method = tokens[0]
+		checkUrl = tokens[1]
 	}
 	if _, err := url.ParseRequestURI(checkUrl); err != nil {
 		return action.BadLine(0, fmt.Sprintf("Invalid URL: %s", checkUrl))
@@ -149,7 +148,7 @@ func (action *SessionAction) CreateTarget() error {
 			continue
 		}
 		if strings.HasPrefix(line, "@") {
-			bodyFile := line[1:]
+			bodyFile := path.Join(scriptPath, line[1:])
 			bodyInfo, err := os.Stat(bodyFile)
 			if err != nil || bodyInfo.IsDir() {
 				var display string
@@ -162,7 +161,8 @@ func (action *SessionAction) CreateTarget() error {
 			}
 			tgt.BodyPath = bodyFile
 		} else if strings.HasPrefix(line, "[") {
-			if err := tgt.Poller.FillFromLine(line[1 : len(line)-1]); err != nil {
+			pollingConfig := line[1 : len(line)-1]
+			if err := tgt.Poller.FillFromLine(pollingConfig); err != nil {
 				return action.BadLine(idx, fmt.Sprintf("Bad poll params '%s': %s", line, err))
 			}
 		} else {
@@ -183,8 +183,9 @@ func (action *SessionAction) CreateTarget() error {
 }
 
 var (
-	extensionCommand       = regexp.MustCompile("^=>")
+	externalCommentCommand = regexp.MustCompile("^COMMENT")
 	internalCommentCommand = regexp.MustCompile("^//")
+	pauseCommand           = regexp.MustCompile("^PAUSE")
 )
 
 // Given a file with:
@@ -212,8 +213,8 @@ var (
 //   "=> PAUSE 12345",
 //   "=> COMMENT - this line will be ignored"
 // ]
-func ScanActions(reader io.Reader) (*[]SessionAction, error) {
-	var actions []SessionAction
+func ScanActions(reader io.Reader) ([]*SessionAction, error) {
+	var actions []*SessionAction
 	lineNumber := 0
 
 	sc := peekingScanner{src: bufio.NewScanner(reader)}
@@ -222,6 +223,7 @@ func ScanActions(reader io.Reader) (*[]SessionAction, error) {
 			return nil, sc.Err()
 		}
 		lineNumber += 1
+		startLine := lineNumber
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || internalCommentCommand.MatchString(line) {
 			continue
@@ -232,15 +234,18 @@ func ScanActions(reader io.Reader) (*[]SessionAction, error) {
 			if nextLine == "" || internalCommentCommand.MatchString(nextLine) {
 				sc.Text() // discard and finish the action
 				break
-			} else if extensionCommand.MatchString(nextLine) || httpMethodLine.MatchString(nextLine) {
+			} else if httpMethodLine.MatchString(nextLine) ||
+				externalCommentCommand.MatchString(nextLine) ||
+				pauseCommand.MatchString(nextLine) {
 				break // done with this target but keep the scanner at the line
 			} else {
 				sc.Scan()
 				current = append(current, sc.Text())
+				lineNumber += 1
 			}
 		}
-		action := SessionAction{Raw: strings.Join(current, "\n"), Line: lineNumber}
+		action := &SessionAction{Raw: strings.Join(current, "\n"), Line: startLine}
 		actions = append(actions, action)
 	}
-	return &actions, nil
+	return actions, nil
 }
