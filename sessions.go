@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"flag"
@@ -15,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cwinters/korra/lib"
+	korra "github.com/cwinters/korra/lib"
 )
 
 func sessionsCmd() command {
@@ -36,7 +37,7 @@ func sessionsCmd() command {
 
 	return command{fs, func(args []string) error {
 		fs.Parse(args)
-		return session(opts)
+		return sessions(opts)
 	}}
 }
 
@@ -57,42 +58,28 @@ type sessionsOpts struct {
 	timeout   time.Duration
 }
 
-// session validates the attack arguments, sets up the
-// required resources, launches the attack and writes the results
-func session(opts *sessionsOpts) error {
-	tlsc := *korra.DefaultTLSConfig
-	if opts.certf != "" {
-		certf, err := file(opts.certf, false)
-		if err != nil {
-			return fmt.Errorf("error opening %s: %s", opts.certf, err)
-		}
-		var cert []byte
-		if cert, err = ioutil.ReadAll(certf); err != nil {
-			return fmt.Errorf("error reading %s: %s", opts.certf, err)
-		}
-		if tlsc.RootCAs, err = certPool(cert); err != nil {
-			return err
-		}
+// sessions validates the arguments, reads in the session scripts and launches
+// them, providing a channel for each so it can halt them at will; it also
+// provides a logger to display overall progress required resources
+func sessions(opts *sessionsOpts) error {
+	var (
+		err      error
+		sessions []*korra.Session
+		tlsc     *tls.Config
+	)
+	if tlsc, err = setupTLS(opts.certf); err != nil {
+		return err
 	}
-
 	sessionOptions := []func(*korra.Attacker){
 		korra.Redirects(opts.redirects),
 		korra.Timeout(opts.timeout),
 		korra.LocalAddr(*opts.laddr.IPAddr),
-		korra.TLSConfig(&tlsc),
+		korra.TLSConfig(tlsc),
 		korra.KeepAlive(opts.keepalive),
 	}
 	sessionFiles := globInputs(fmt.Sprintf("%s/*.txt", opts.sessiond))
-	sessions := make([]*korra.Session, len(sessionFiles))
-	for idx, sessionFile := range sessionFiles {
-		reader, err := file(sessionFile, false)
-		if err != nil {
-			return fmt.Errorf("error reading session file %s: %s", sessionFile, err)
-		}
-		sessions[idx], err = korra.NewSession(sessionFile, reader, opts.sessiond, sessionOptions)
-		if err != nil {
-			return fmt.Errorf("Error creating session script %s: %s", sessionFile, err)
-		}
+	if sessions, err = readSessions(opts.sessiond, sessionFiles, sessionOptions); err != nil {
+		return err
 	}
 
 	log := os.Stdout
@@ -131,8 +118,22 @@ func session(opts *sessionsOpts) error {
 			return nil
 		}
 	}
-
 	return nil
+}
+
+func readSessions(sessionDir string, sessionFiles []string, sessionOptions []func(*korra.Attacker)) ([]*korra.Session, error) {
+	sessions := make([]*korra.Session, len(sessionFiles))
+	for idx, sessionFile := range sessionFiles {
+		reader, err := file(sessionFile, false)
+		if err != nil {
+			return sessions, fmt.Errorf("error reading session file %s: %s", sessionFile, err)
+		}
+		sessions[idx], err = korra.NewSession(sessionFile, reader, sessionDir, sessionOptions)
+		if err != nil {
+			return sessions, fmt.Errorf("Error creating session script %s: %s", sessionFile, err)
+		}
+	}
+	return sessions, nil
 }
 
 // headers is the http.Header used in each target request
@@ -168,6 +169,24 @@ type localAddr struct{ *net.IPAddr }
 func (ip *localAddr) Set(value string) (err error) {
 	ip.IPAddr, err = net.ResolveIPAddr("ip", value)
 	return
+}
+
+func setupTLS(filename string) (*tls.Config, error) {
+	tlsc := *korra.DefaultTLSConfig
+	if filename != "" {
+		certf, err := file(filename, false)
+		if err != nil {
+			return nil, fmt.Errorf("error opening %s: %s", filename, err)
+		}
+		var cert []byte
+		if cert, err = ioutil.ReadAll(certf); err != nil {
+			return nil, fmt.Errorf("error reading %s: %s", filename, err)
+		}
+		if tlsc.RootCAs, err = certPool(cert); err != nil {
+			return nil, err
+		}
+	}
+	return &tlsc, nil
 }
 
 // certPool returns a new *x509.CertPool with the passed cert included.
