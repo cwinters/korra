@@ -24,6 +24,10 @@ type Result struct {
 	URL       string        `json:"url"`
 }
 
+func (result *Result) HasErrorCode() bool {
+	return result.Code < 200 || result.Code >= 400
+}
+
 // Collect concurrently reads Results from multiple io.Readers until all of
 // them return io.EOF. Each read Result is passed to the returned Results channel
 // while errors will be put in the returned error channel.

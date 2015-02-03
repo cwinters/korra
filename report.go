@@ -55,17 +55,17 @@ func report(reporter, inputs, output, filters string) error {
 	var (
 		err error
 	)
-	files := globResults(inputs)
+	files := korra.GlobResults(inputs)
 	srcs := make([]io.Reader, len(files))
 	for i, f := range files {
-		in, err := file(f, false)
+		in, err := korra.File(f, false)
 		if err != nil {
 			return err
 		}
 		defer in.Close()
 		srcs[i] = in
 	}
-	out, err := file(output, true)
+	out, err := korra.File(output, true)
 	if err != nil {
 		return err
 	}

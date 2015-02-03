@@ -12,6 +12,13 @@ import (
 	"strings"
 )
 
+type SessionProgress struct {
+	Complete   bool
+	Actions    int
+	Current    int
+	Percentage float32
+}
+
 type SessionScript struct {
 	Actions []*SessionAction
 	Current int
@@ -30,12 +37,17 @@ func (script *SessionScript) IsValid() bool {
 	return true
 }
 
-func (script *SessionScript) Progress() float32 {
-	return float32(script.Current+1) / float32(script.ActionCount())
+func (script *SessionScript) Progress() SessionProgress {
+	return SessionProgress{
+		Actions:    script.ActionCount(),
+		Current:    script.Current,
+		Complete:   script.Current == script.ActionCount(),
+		Percentage: (float32(script.Current) / float32(script.ActionCount())) * 100,
+	}
 }
 
 func (script *SessionScript) ProgressLabel() string {
-	return fmt.Sprintf("%d of %d", script.Current+1, script.ActionCount())
+	return fmt.Sprintf("%d of %d", script.Current, script.ActionCount())
 }
 
 // NewScript creates a new script of SessionAction objects from the given

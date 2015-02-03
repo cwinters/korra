@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -14,8 +13,7 @@ import (
 type Attacker struct {
 	dialer    *net.Dialer
 	client    http.Client
-	stop      chan struct{}
-	workers   uint64
+	pretend   bool
 	redirects int
 }
 
@@ -38,7 +36,7 @@ var (
 // NewAttacker returns a new Attacker with default options which are overridden
 // by the optionally provided opts.
 func NewAttacker(opts ...func(*Attacker)) *Attacker {
-	a := &Attacker{stop: make(chan struct{})}
+	a := &Attacker{}
 	a.dialer = &net.Dialer{
 		LocalAddr: &net.TCPAddr{IP: DefaultLocalAddr.IP, Zone: DefaultLocalAddr.Zone},
 		KeepAlive: 30 * time.Second,
@@ -59,12 +57,34 @@ func NewAttacker(opts ...func(*Attacker)) *Attacker {
 	return a
 }
 
-// Workers returns a functional option which sets the number of workers
-// an Attacker uses to hit its targets.
-// If zero or greater than the total number of hits, workers will be capped
-// to that maximum.
-func Workers(n uint64) func(*Attacker) {
-	return func(a *Attacker) { a.workers = n }
+// KeepAlive returns a functional option which toggles KeepAlive
+// connections on the dialer and transport.
+func KeepAlive(keepalive bool) func(*Attacker) {
+	return func(a *Attacker) {
+		tr := a.client.Transport.(*http.Transport)
+		tr.DisableKeepAlives = !keepalive
+		if !keepalive {
+			a.dialer.KeepAlive = 0
+			tr.Dial = a.dialer.Dial
+		}
+	}
+}
+
+// LocalAddr returns a functional option which sets the local address
+// an Attacker will use with its requests.
+func LocalAddr(addr net.IPAddr) func(*Attacker) {
+	return func(a *Attacker) {
+		tr := a.client.Transport.(*http.Transport)
+		a.dialer.LocalAddr = &net.TCPAddr{IP: addr.IP, Zone: addr.Zone}
+		tr.Dial = a.dialer.Dial
+	}
+}
+
+// Pretend returns a functional option which toggles whether this
+// attacker will actually send HTTP requests on `Hit()` or just
+// return a successful Result
+func Pretend(pretend bool) func(*Attacker) {
+	return func(a *Attacker) { a.pretend = pretend }
 }
 
 // Redirects returns a functional option which sets the maximum
@@ -92,29 +112,6 @@ func Timeout(d time.Duration) func(*Attacker) {
 	}
 }
 
-// LocalAddr returns a functional option which sets the local address
-// an Attacker will use with its requests.
-func LocalAddr(addr net.IPAddr) func(*Attacker) {
-	return func(a *Attacker) {
-		tr := a.client.Transport.(*http.Transport)
-		a.dialer.LocalAddr = &net.TCPAddr{IP: addr.IP, Zone: addr.Zone}
-		tr.Dial = a.dialer.Dial
-	}
-}
-
-// KeepAlive returns a functional option which toggles KeepAlive
-// connections on the dialer and transport.
-func KeepAlive(keepalive bool) func(*Attacker) {
-	return func(a *Attacker) {
-		tr := a.client.Transport.(*http.Transport)
-		tr.DisableKeepAlives = !keepalive
-		if !keepalive {
-			a.dialer.KeepAlive = 0
-			tr.Dial = a.dialer.Dial
-		}
-	}
-}
-
 // TLSConfig returns a functional option which sets the *tls.Config for a
 // Attacker to use with its requests.
 func TLSConfig(c *tls.Config) func(*Attacker) {
@@ -124,92 +121,59 @@ func TLSConfig(c *tls.Config) func(*Attacker) {
 	}
 }
 
-// Attack reads its Targets from the passed Targeter and attacks them at
-// the rate specified for duration time. Results are put into the returned channel
-// as soon as they arrive.
-func (a *Attacker) Attack(tr Targeter, rate uint64, du time.Duration) chan *Result {
-	resc := make(chan *Result)
-	throttle := time.NewTicker(time.Duration(1e9 / rate))
-	hits := rate * uint64(du.Seconds())
-	wrk := a.workers
-	if wrk == 0 || wrk > hits {
-		wrk = hits
-	}
-	share := hits / wrk
-
-	var wg sync.WaitGroup
-	for i := uint64(0); i < wrk; i++ {
-		wg.Add(1)
-		go func(share uint64) {
-			defer wg.Done()
-			for j := uint64(0); j < share; j++ {
-				select {
-				case tm := <-throttle.C:
-					resc <- a.hit(tr, tm)
-				case <-a.stop:
-					return
-				}
-			}
-		}(share)
-	}
-
-	go func() {
-		wg.Wait()
-		close(resc)
-		throttle.Stop()
-	}()
-
-	return resc
-}
-
-// Stop stops the current attack.
-func (a *Attacker) Stop() { close(a.stop) }
-
-func (a *Attacker) hit(tr Targeter, tm time.Time) *Result {
+// Hit reads the next target from the targeter and, if `Pretend` is false,
+// sends the HTTP request with the headers and body from the Target,
+// recording the bytes sent and received, the status code and error message.
+func (a *Attacker) Hit(targeter Targeter, tm time.Time) *Result {
 	var (
-		res = Result{Timestamp: tm}
-		err error
+		err      error
+		request  *http.Request
+		response *http.Response
+		result   = Result{Timestamp: tm}
+		tgt      *Target
 	)
 
 	defer func() {
-		res.Latency = time.Since(tm)
+		result.Latency = time.Since(tm)
 		if err != nil {
-			res.Error = err.Error()
+			result.Error = err.Error()
 		}
 	}()
 
-	tgt, err := tr()
-	if err != nil {
-		return &res
+	if tgt, err = targeter(); err != nil {
+		return &result
 	}
-	res.URL = tgt.URL
-	res.Method = tgt.Method
+	result.URL = tgt.URL
+	result.Method = tgt.Method
+	if a.pretend {
+		result.Code = 200
+		return &result
+	}
 
-	req, err := tgt.Request()
-	if err != nil {
-		return &res
+	if request, err = tgt.Request(); err != nil {
+		return &result
 	}
-	r, err := a.client.Do(req)
-	if err != nil {
+
+	if response, err = a.client.Do(request); err != nil {
 		// ignore redirect errors when the user set --redirects=NoFollow
 		if a.redirects == NoFollow && strings.Contains(err.Error(), "stopped after") {
 			err = nil
 		}
-		return &res
+		return &result
 	}
-	r.Body.Close()
+	response.Body.Close()
 
-	if req.ContentLength != -1 {
-		res.BytesOut = uint64(req.ContentLength)
-	}
-
-	if r.ContentLength != -1 {
-		res.BytesIn = uint64(r.ContentLength)
+	if request.ContentLength != -1 {
+		result.BytesOut = uint64(request.ContentLength)
 	}
 
-	if res.Code = uint16(r.StatusCode); res.Code < 200 || res.Code >= 400 {
-		res.Error = r.Status
+	if response.ContentLength != -1 {
+		result.BytesIn = uint64(response.ContentLength)
 	}
 
-	return &res
+	if result.Code = uint16(response.StatusCode); result.HasErrorCode() {
+		result.Error = response.Status
+	}
+
+	return &result
 }

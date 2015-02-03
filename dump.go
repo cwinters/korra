@@ -30,10 +30,10 @@ func dump(dumper, inputs, output string) error {
 		return fmt.Errorf("unsupported dumper: %s", dumper)
 	}
 
-	files := globResults(inputs)
+	files := korra.GlobResults(inputs)
 	srcs := make([]io.Reader, len(files))
 	for i, f := range files {
-		in, err := file(f, false)
+		in, err := korra.File(f, false)
 		if err != nil {
 			return err
 		}
@@ -41,7 +41,7 @@ func dump(dumper, inputs, output string) error {
 		srcs[i] = in
 	}
 
-	out, err := file(output, true)
+	out, err := korra.File(output, true)
 	if err != nil {
 		return err
 	}

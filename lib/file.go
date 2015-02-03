@@ -1,4 +1,4 @@
-package main
+package korra
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func file(name string, create bool) (*os.File, error) {
+func File(name string, create bool) (*os.File, error) {
 	switch name {
 	case "stdin":
 		return os.Stdin, nil
@@ -21,7 +21,7 @@ func file(name string, create bool) (*os.File, error) {
 	}
 }
 
-func globInputs(spec string) []string {
+func GlobInputs(spec string) []string {
 	info, err := os.Stat(spec)
 	if err == nil && info.IsDir() {
 		spec = fmt.Sprintf("%s/*.txt", spec)
@@ -37,7 +37,7 @@ func globInputs(spec string) []string {
 	return files
 }
 
-func globResults(spec string) []string {
+func GlobResults(spec string) []string {
 	info, err := os.Stat(spec)
 	if err == nil && info.IsDir() {
 		spec = fmt.Sprintf("%s/*.bin", spec)

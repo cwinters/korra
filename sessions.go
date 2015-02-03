@@ -31,6 +31,7 @@ func sessionsCmd() command {
 	fs.BoolVar(&opts.keepalive, "keepalive", true, "Use persistent connections")
 	fs.Var(&opts.laddr, "laddr", "Local IP address")
 	fs.StringVar(&opts.logf, "log", "stdout", "Overall log")
+	fs.BoolVar(&opts.pretend, "pretend", false, "Do everything but send traffic")
 	fs.IntVar(&opts.redirects, "redirects", korra.DefaultRedirects, "Number of redirects to follow. -1 will not follow but marks as success")
 	fs.StringVar(&opts.sessiond, "dir", "", "Directory of sessions")
 	fs.DurationVar(&opts.timeout, "timeout", korra.DefaultTimeout, "Requests timeout")
@@ -53,6 +54,7 @@ type sessionsOpts struct {
 	keepalive bool
 	laddr     localAddr
 	logf      string
+	pretend   bool
 	redirects int
 	sessiond  string
 	timeout   time.Duration
@@ -60,7 +62,8 @@ type sessionsOpts struct {
 
 // sessions validates the arguments, reads in the session scripts and launches
 // them, providing a channel for each so it can halt them at will; it also
-// provides a logger to display overall progress required resources
+// provides a logger to display overall progress (starting and stopping, plus
+// errors) and also writes to the logger every 30 seconds with the progress.
 func sessions(opts *sessionsOpts) error {
 	var (
 		err      error
@@ -76,8 +79,9 @@ func sessions(opts *sessionsOpts) error {
 		korra.LocalAddr(*opts.laddr.IPAddr),
 		korra.TLSConfig(tlsc),
 		korra.KeepAlive(opts.keepalive),
+		korra.Pretend(opts.pretend),
 	}
-	sessionFiles := globInputs(fmt.Sprintf("%s/*.txt", opts.sessiond))
+	sessionFiles := korra.GlobInputs(fmt.Sprintf("%s/*.txt", opts.sessiond))
 	if sessions, err = readSessions(opts.sessiond, sessionFiles, sessionOptions); err != nil {
 		return err
 	}
@@ -113,9 +117,21 @@ func sessions(opts *sessionsOpts) error {
 		select {
 		case <-done:
 			for _, session := range sessions {
-				session.Stop() // wait for each user to finish up?
+				session.Stop() // wait for each session to finish up?
 			}
 			return nil
+		case <-time.After(30 * time.Second):
+			actionCount, actionsDone, sessionsDone := 0, 0, 0
+			for _, session := range sessions {
+				progress := session.Progress()
+				actionCount += progress.Actions
+				actionsDone += progress.Current - 1
+				if progress.Complete {
+					sessionsDone += 1
+				}
+			}
+			logChan <- fmt.Sprintf("%s: %d of %d actions completed (%.2f%%); %d sessions complete",
+				time.Now(), actionsDone, actionCount, (actionsDone/actionCount)*100, sessionsDone)
 		}
 	}
 	return nil
@@ -123,8 +139,11 @@ func sessions(opts *sessionsOpts) error {
 
 func readSessions(sessionDir string, sessionFiles []string, sessionOptions []func(*korra.Attacker)) ([]*korra.Session, error) {
 	sessions := make([]*korra.Session, len(sessionFiles))
+	if len(sessionFiles) == 0 {
+		return sessions, errMissingDir
+	}
 	for idx, sessionFile := range sessionFiles {
-		reader, err := file(sessionFile, false)
+		reader, err := korra.File(sessionFile, false)
 		if err != nil {
 			return sessions, fmt.Errorf("error reading session file %s: %s", sessionFile, err)
 		}
@@ -174,7 +193,7 @@ func (ip *localAddr) Set(value string) (err error) {
 func setupTLS(filename string) (*tls.Config, error) {
 	tlsc := *korra.DefaultTLSConfig
 	if filename != "" {
-		certf, err := file(filename, false)
+		certf, err := korra.File(filename, false)
 		if err != nil {
 			return nil, fmt.Errorf("error opening %s: %s", filename, err)
 		}

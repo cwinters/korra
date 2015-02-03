@@ -26,7 +26,7 @@ func scanCmd() command {
 }
 
 func scan(opts *scanOpts) error {
-	f, err := file(opts.scanf, false)
+	f, err := korra.File(opts.scanf, false)
 	if err != nil {
 		return fmt.Errorf("Error opening file to scan: %s", err)
 	}
