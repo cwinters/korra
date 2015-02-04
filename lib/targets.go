@@ -44,11 +44,12 @@ func (poller *TargetPoller) FillFromLine(line string) error {
 		if len(param) != 2 {
 			return fmt.Errorf("Expected key=value for poll param, got: %s", piece)
 		}
-		name := strings.ToLower(param[0])
+		name := strings.TrimSpace(strings.ToLower(param[0]))
+		value := strings.TrimSpace(param[1])
 		if name == "status" {
-			poller.UntilStatus = regexp.MustCompile(param[1])
+			poller.UntilStatus = regexp.MustCompile(value)
 		} else {
-			if num, err := strconv.Atoi(param[1]); err != nil {
+			if num, err := strconv.Atoi(value); err == nil {
 				switch name {
 				case "count":
 					poller.UntilCount = num
@@ -71,7 +72,7 @@ func (poller *TargetPoller) ShouldRetry(requestCount int, statusCode int) bool {
 		poller.IsRetryStatus(statusCode)
 }
 
-func (poller *TargetPoller) ToString() string {
+func (poller *TargetPoller) String() string {
 	return fmt.Sprintf("[Count=%d Wait=%d Status=%s]",
 		poller.UntilCount, poller.WaitBetweenPolls, poller.UntilStatus.String())
 }

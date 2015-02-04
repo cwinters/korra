@@ -43,7 +43,7 @@ func scan(opts *scanOpts) error {
 				} else {
 					pollingMessage := "NO"
 					if target.Poller.Active {
-						pollingMessage = fmt.Sprintf("YES, %s", target.Poller.ToString())
+						pollingMessage = fmt.Sprintf("YES, %s", target.Poller)
 					}
 					message = fmt.Sprintf("%s %s [Headers: %d] [Body? %t] [Polling? %s]",
 						target.Method, target.URL, len(target.Header), target.BodyPath != "", pollingMessage)

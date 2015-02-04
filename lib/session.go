@@ -84,7 +84,6 @@ func (session *Session) Progress() SessionProgress {
 
 func (session *Session) Run(log chan string) {
 	session.running = true
-	session.Script.Current = 1
 	enc := NewResultEncoder(session.Name)
 	go session.process(log)
 	for {
@@ -160,9 +159,9 @@ func (session *Session) processTarget(action *SessionAction, target *Target) {
 		session.results <- result
 		if target.Poller.ShouldRetry(requests, int(result.Code)) {
 			pauseMillis := target.Poller.WaitBetweenPolls
-			session.log(fmt.Sprintf("Pausing for %d ms until retry...", pauseMillis))
+			session.log(fmt.Sprintf("Attempt %d requires retry, %d ms pause until next poll", requests, pauseMillis))
 			time.Sleep(time.Duration(pauseMillis) * time.Millisecond)
-			requests = requests + 1
+			requests += 1
 		} else {
 			break
 		}
