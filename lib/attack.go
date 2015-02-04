@@ -13,7 +13,6 @@ import (
 type Attacker struct {
 	dialer    *net.Dialer
 	client    http.Client
-	pretend   bool
 	redirects int
 }
 
@@ -80,13 +79,6 @@ func LocalAddr(addr net.IPAddr) func(*Attacker) {
 	}
 }
 
-// Pretend returns a functional option which toggles whether this
-// attacker will actually send HTTP requests on `Hit()` or just
-// return a successful Result
-func Pretend(pretend bool) func(*Attacker) {
-	return func(a *Attacker) { a.pretend = pretend }
-}
-
 // Redirects returns a functional option which sets the maximum
 // number of redirects an Attacker will follow.
 func Redirects(n int) func(*Attacker) {
@@ -121,9 +113,9 @@ func TLSConfig(c *tls.Config) func(*Attacker) {
 	}
 }
 
-// Hit reads the next target from the targeter and, if `Pretend` is false,
-// sends the HTTP request with the headers and body from the Target,
-// recording the bytes sent and received, the status code and error message.
+// Hit reads the next target from the targeter and sends the HTTP request with
+// the headers and body from the Target, recording the bytes sent and received,
+// the status code and error message.
 func (a *Attacker) Hit(targeter Targeter, tm time.Time) *Result {
 	var (
 		err      error
@@ -145,10 +137,6 @@ func (a *Attacker) Hit(targeter Targeter, tm time.Time) *Result {
 	}
 	result.URL = tgt.URL
 	result.Method = tgt.Method
-	if a.pretend {
-		result.Code = 200
-		return &result
-	}
 
 	if request, err = tgt.Request(); err != nil {
 		return &result

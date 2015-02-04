@@ -28,6 +28,10 @@ func (script *SessionScript) ActionCount() int {
 	return len(script.Actions)
 }
 
+func (script *SessionScript) ActionsRemain() bool {
+	return len(script.Actions) > script.Current
+}
+
 func (script *SessionScript) IsValid() bool {
 	for _, action := range script.Actions {
 		if action.Error != nil {
@@ -35,6 +39,12 @@ func (script *SessionScript) IsValid() bool {
 		}
 	}
 	return true
+}
+
+func (script *SessionScript) NextAction() *SessionAction {
+	action := script.Actions[script.Current]
+	script.Current += 1
+	return action
 }
 
 func (script *SessionScript) Progress() SessionProgress {
@@ -47,7 +57,7 @@ func (script *SessionScript) Progress() SessionProgress {
 }
 
 func (script *SessionScript) ProgressLabel() string {
-	return fmt.Sprintf("%d of %d", script.Current, script.ActionCount())
+	return fmt.Sprintf("%d/%d", script.Current, script.ActionCount())
 }
 
 // NewScript creates a new script of SessionAction objects from the given
@@ -55,19 +65,28 @@ func (script *SessionScript) ProgressLabel() string {
 // for the validation checks it performs. Therefore the returned error will be either
 // an IO error (from reading the script) or the first invalid action it
 // encounters.
-func NewScript(script io.Reader, scriptPath string) (*SessionScript, error) {
-	actions, err := ScanActions(script)
-	if err != nil {
+func NewScript(scriptPath string) (*SessionScript, error) {
+	var (
+		err            error
+		scannedActions []*SessionAction
+		script         io.Reader
+		validActions   []*SessionAction
+	)
+
+	if script, err = scriptFile(scriptPath); err != nil {
 		return nil, err
 	}
-	var scriptActions []*SessionAction
-	for _, action := range actions {
-		if err := action.CreateTarget(scriptPath); err != nil {
+	if scannedActions, err = ScanActions(script); err != nil {
+		return nil, err
+	}
+	scriptDir := path.Dir(scriptPath)
+	for _, action := range scannedActions {
+		if err := action.CreateTarget(scriptDir); err != nil {
 			return nil, err
 		}
-		scriptActions = append(scriptActions, action)
+		validActions = append(validActions, action)
 	}
-	return &SessionScript{Actions: scriptActions, Current: 0}, nil
+	return &SessionScript{Actions: validActions, Current: 0}, nil
 }
 
 // CheckScript creates a new script of SessionAction objects from
@@ -76,15 +95,38 @@ func NewScript(script io.Reader, scriptPath string) (*SessionScript, error) {
 // parses and returns all of them and the ones with an error have
 // their `Error` property set. You can also check the validity of
 // the entire script with `IsValid()`
-func CheckScript(script io.Reader, scriptPath string) (*SessionScript, error) {
+func CheckScript(scriptPath string) (*SessionScript, error) {
+	script, err := scriptFile(scriptPath)
+	if err != nil {
+		return nil, err
+	}
 	if actions, err := ScanActions(script); err != nil {
 		return nil, err
 	} else {
+		scriptDir := path.Dir(scriptPath)
 		for _, action := range actions {
-			action.CreateTarget(scriptPath)
+			action.CreateTarget(scriptDir)
 		}
 		return &SessionScript{Actions: actions, Current: 0}, nil
 	}
+}
+
+func scriptFile(scriptPath string) (io.Reader, error) {
+	fi, err := os.Stat(scriptPath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading session file %s: %s", scriptPath, err)
+	}
+	if fi.IsDir() {
+		return nil, fmt.Errorf("error reading session file %s: is directory", scriptPath)
+	}
+	if fi.Size() == 0 {
+		return nil, fmt.Errorf("error reading session file %s: empty", scriptPath)
+	}
+	script, err := os.Open(scriptPath)
+	if err != nil {
+		return nil, fmt.Errorf("error opening session file: %s: %s", scriptPath, err)
+	}
+	return script, nil
 }
 
 var (
@@ -112,7 +154,7 @@ func (action *SessionAction) BadLine(offset int, message string) error {
 // * that a header value is specified (if the action lists any request headers)
 // * that the file with the request body exists (if one is specified)
 // * that the polling parameters are valid ones (if polling is being used)
-func (action *SessionAction) CreateTarget(scriptPath string) error {
+func (action *SessionAction) CreateTarget(scriptDir string) error {
 	tgt := NewTarget()
 	lines := strings.Split(action.Raw, "\n")
 	firstLine := strings.TrimSpace(lines[0])
@@ -160,7 +202,7 @@ func (action *SessionAction) CreateTarget(scriptPath string) error {
 			continue
 		}
 		if strings.HasPrefix(line, "@") {
-			bodyFile := path.Join(scriptPath, line[1:])
+			bodyFile := path.Join(scriptDir, line[1:])
 			bodyInfo, err := os.Stat(bodyFile)
 			if err != nil || bodyInfo.IsDir() {
 				var display string
@@ -192,6 +234,10 @@ func (action *SessionAction) CreateTarget(scriptPath string) error {
 	}
 	action.Target = tgt
 	return nil
+}
+
+func (action *SessionAction) String() string {
+	return fmt.Sprintf("[%d] %s", action.Line, action.Target)
 }
 
 var (

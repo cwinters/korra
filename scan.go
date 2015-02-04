@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"path"
 
 	korra "github.com/cwinters/korra/lib"
 )
@@ -26,13 +25,9 @@ func scanCmd() command {
 }
 
 func scan(opts *scanOpts) error {
-	f, err := korra.File(opts.scanf, false)
+	script, err := korra.CheckScript(opts.scanf)
 	if err != nil {
-		return fmt.Errorf("Error opening file to scan: %s", err)
-	}
-	script, err := korra.CheckScript(f, path.Dir(opts.scanf))
-	if err != nil {
-		return fmt.Errorf("Error reading file: %s", err)
+		return err
 	}
 	for _, action := range script.Actions {
 		if opts.verbose {

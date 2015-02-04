@@ -38,37 +38,43 @@ func (e *ResultEncoder) Close() {
 }
 
 type Session struct {
-	Name      string
-	Script    *SessionScript
-	attacker  *Attacker
-	logTarget io.Writer
-	stopper   chan struct{}
-	running   bool
+	Name     string
+	Pretend  bool
+	Script   *SessionScript
+	attacker *Attacker
+	logChan  chan string
+	results  chan *Result
+	running  bool
+	stopper  chan struct{}
 }
 
-func NewSession(name string, in io.Reader, scriptPath string, opts []func(*Attacker)) (*Session, error) {
+func NewSession(scriptPath string, opts []func(*Attacker), logChan chan string) (*Session, error) {
 	var (
 		err    error
 		script *SessionScript
 	)
-	if script, err = NewScript(in, scriptPath); err != nil {
+
+	if script, err = NewScript(scriptPath); err != nil {
 		return nil, err
 	}
-	logName := strings.Replace(name, ".txt", ".log", -1)
-	logFile, _ := File(path.Join(scriptPath, logName), true)
-	return &Session{
-		Name:      name,
-		Script:    script,
-		attacker:  NewAttacker(opts...),
-		logTarget: logFile,
-		stopper:   make(chan struct{}),
-	}, nil
+	name := path.Base(scriptPath)
+	session := &Session{
+		Name:     name,
+		Script:   script,
+		attacker: NewAttacker(opts...),
+		logChan:  logChan,
+		results:  make(chan *Result),
+		stopper:  make(chan struct{}),
+	}
+	session.log("CREATED")
+	return session, nil
 }
 
-// log writes to the session-only log file
+// log sends messages to the global log, prefixing it first with the session
+// name and the current progress
 func (session *Session) log(msg string) {
-	if session.logTarget != nil {
-		session.logTarget.Write([]byte(msg + "\n"))
+	if session.logChan != nil {
+		session.logChan <- fmt.Sprintf("%s %s: %s", session.Name, session.Script.ProgressLabel(), msg)
 	}
 }
 
@@ -80,28 +86,25 @@ func (session *Session) Run(log chan string) {
 	session.running = true
 	session.Script.Current = 1
 	enc := NewResultEncoder(session.Name)
-	results := make(chan *Result)
-	go session.process(results, log)
+	go session.process(log)
 	for {
 		select {
-		case result := <-results:
+		case result := <-session.results:
 			enc.AddResult(result)
 
 		// wait for the next result (or timeout) then wrap up:
 		case <-session.stopper:
 			session.running = false
-			logMessage := fmt.Sprintf("%s: All done or asked to stop, waiting for next result or 5 seconds...", session.Name)
-			log <- logMessage
-			session.log(logMessage)
-			select {
-			case result := <-results:
-				enc.AddResult(result)
-			case <-time.After(5 * time.Second):
+			session.log("All done or asked to stop, waiting for next result or 5 seconds...")
+			if !session.Pretend {
+				select {
+				case result := <-session.results:
+					enc.AddResult(result)
+				case <-time.After(5 * time.Second):
+				}
 			}
 			enc.Close()
-			completeMessage := fmt.Sprintf("%s: ...DONE", session.Name)
-			log <- completeMessage
-			session.log(completeMessage)
+			session.log("DONE")
 			return
 		}
 	}
@@ -113,44 +116,57 @@ func (session *Session) Stop() {
 	}
 }
 
-func (session *Session) process(results chan *Result, log chan string) {
-	for _, action := range session.Script.Actions {
-		label := fmt.Sprintf("%s (%s)", session.Name, session.Script.ProgressLabel())
+func (session *Session) process(log chan string) {
+	for session.Script.ActionsRemain() {
+		action := session.Script.NextAction()
+
+		//for _, action := range session.Script.Actions {
 		target := action.Target
 		if target.IsComment() {
-			session.log(fmt.Sprintf("%s: %s", label, target.Comment))
-			continue
+			session.log(target.Comment)
 		} else if target.IsPause() {
-			session.log(fmt.Sprintf("%s: Sleeping (%d ms)...", label, target.PauseTime))
+			if session.Pretend {
+				session.log(fmt.Sprintf("Sleeping (pretend) (%d ms)...", target.PauseTime))
+				continue
+			}
+			session.log(fmt.Sprintf("Sleeping (%d ms)...", target.PauseTime))
 			select {
 			case <-session.stopper:
 				return
 			case <-time.After(time.Duration(target.PauseTime) * time.Millisecond):
 			}
-			continue
-		}
-
-		targeter := func() (*Target, error) { return target, nil }
-
-		// retry a request if we're supposed to poll
-		requests := 1
-		for {
-			timestamp := time.Now()
-			result := session.attacker.Hit(targeter, timestamp)
-			session.log(fmt.Sprintf("%s: %d => %s %s, %d ms",
-				label, result.Code, result.Method, result.URL, int64(result.Latency/time.Millisecond)))
-			results <- result
-			if target.Poller.ShouldRetry(requests, int(result.Code)) {
-				pauseMillis := target.Poller.WaitBetweenPolls
-				session.log(fmt.Sprintf("%s: Pausing for %d ms until retry...", label, pauseMillis))
-				time.Sleep(time.Duration(pauseMillis) * time.Millisecond)
-				requests = requests + 1
-			} else {
-				break
-			}
+		} else {
+			session.processTarget(action, target)
 		}
 	}
 	session.stopper <- struct{}{}
+}
+
+func (session *Session) processTarget(action *SessionAction, target *Target) {
+	if session.Pretend {
+		session.log(fmt.Sprintf("%d (pretend) => %s %s, %d ms",
+			200, target.Method, target.URL, 0))
+		return
+	}
+	targeter := func() (*Target, error) { return target, nil }
+
+	// retry a request if we're supposed to poll
+	requests := 1
+	for {
+		timestamp := time.Now()
+		result := session.attacker.Hit(targeter, timestamp)
+		session.log(fmt.Sprintf("%d => %s %s, %d ms",
+			result.Code, result.Method, result.URL, int64(result.Latency/time.Millisecond)))
+		session.results <- result
+		if target.Poller.ShouldRetry(requests, int(result.Code)) {
+			pauseMillis := target.Poller.WaitBetweenPolls
+			session.log(fmt.Sprintf("Pausing for %d ms until retry...", pauseMillis))
+			time.Sleep(time.Duration(pauseMillis) * time.Millisecond)
+			requests = requests + 1
+		} else {
+			break
+		}
+	}
 }
 
 func retryable(code uint16) bool {

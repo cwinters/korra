@@ -38,13 +38,14 @@ func sessionsCmd() command {
 
 	return command{fs, func(args []string) error {
 		fs.Parse(args)
-		return sessions(opts)
+		return Sessions(opts)
 	}}
 }
 
 var (
 	errBadCert    = errors.New("bad certificate")
 	errMissingDir = errors.New("directory must exist and have at least one .txt file")
+	timeFormat    = "15:04:05.999999"
 )
 
 // sessionOpts aggregates the session function command options
@@ -64,45 +65,46 @@ type sessionsOpts struct {
 // them, providing a channel for each so it can halt them at will; it also
 // provides a logger to display overall progress (starting and stopping, plus
 // errors) and also writes to the logger every 30 seconds with the progress.
-func sessions(opts *sessionsOpts) error {
+func Sessions(opts *sessionsOpts) error {
 	var (
 		err      error
 		sessions []*korra.Session
 		tlsc     *tls.Config
 	)
+	log := os.Stdout
+	logChan := make(chan string)
+	go func(o chan string) {
+		for {
+			select {
+			case msg := <-o:
+				out := fmt.Sprintf("%s %s\n", time.Now().Format(timeFormat), msg)
+				log.Write([]byte(out))
+			}
+		}
+	}(logChan)
+
 	if tlsc, err = setupTLS(opts.certf); err != nil {
 		return err
 	}
-	sessionOptions := []func(*korra.Attacker){
+	clientOptions := []func(*korra.Attacker){
 		korra.Redirects(opts.redirects),
 		korra.Timeout(opts.timeout),
 		korra.LocalAddr(*opts.laddr.IPAddr),
 		korra.TLSConfig(tlsc),
 		korra.KeepAlive(opts.keepalive),
-		korra.Pretend(opts.pretend),
 	}
 	sessionFiles := korra.GlobInputs(fmt.Sprintf("%s/*.txt", opts.sessiond))
-	if sessions, err = readSessions(opts.sessiond, sessionFiles, sessionOptions); err != nil {
+	if sessions, err = readSessions(opts, sessionFiles, clientOptions, logChan); err != nil {
 		return err
 	}
 
-	log := os.Stdout
-	logChan := make(chan string)
-	go func(o chan string) {
-		select {
-		case msg := <-o:
-			log.Write([]byte(msg + "\n"))
-		}
-	}(logChan)
-
 	var wg sync.WaitGroup
-
-	for _, session := range sessions {
+	for _, aSession := range sessions {
 		wg.Add(1)
-		go func(user *korra.Session) {
+		go func(session *korra.Session) {
 			defer wg.Done()
 			session.Run(logChan)
-		}(session)
+		}(aSession)
 	}
 
 	// catch completion of all sessions, and from the OS
@@ -125,32 +127,29 @@ func sessions(opts *sessionsOpts) error {
 			for _, session := range sessions {
 				progress := session.Progress()
 				actionCount += progress.Actions
-				actionsDone += progress.Current - 1
+				actionsDone += progress.Current
 				if progress.Complete {
 					sessionsDone += 1
 				}
 			}
-			logChan <- fmt.Sprintf("%s: %d of %d actions completed (%.2f%%); %d sessions complete",
-				time.Now(), actionsDone, actionCount, (actionsDone/actionCount)*100, sessionsDone)
+			logChan <- fmt.Sprintf("%d of %d actions completed (%.2f%%); %d sessions complete",
+				actionsDone, actionCount, (float32(actionsDone)/float32(actionCount))*100, sessionsDone)
 		}
 	}
 	return nil
 }
 
-func readSessions(sessionDir string, sessionFiles []string, sessionOptions []func(*korra.Attacker)) ([]*korra.Session, error) {
+func readSessions(opts *sessionsOpts, sessionFiles []string, clientOptions []func(*korra.Attacker), log chan string) ([]*korra.Session, error) {
+	var err error
 	sessions := make([]*korra.Session, len(sessionFiles))
 	if len(sessionFiles) == 0 {
 		return sessions, errMissingDir
 	}
 	for idx, sessionFile := range sessionFiles {
-		reader, err := korra.File(sessionFile, false)
-		if err != nil {
-			return sessions, fmt.Errorf("error reading session file %s: %s", sessionFile, err)
-		}
-		sessions[idx], err = korra.NewSession(sessionFile, reader, sessionDir, sessionOptions)
-		if err != nil {
+		if sessions[idx], err = korra.NewSession(sessionFile, clientOptions, log); err != nil {
 			return sessions, fmt.Errorf("Error creating session script %s: %s", sessionFile, err)
 		}
+		sessions[idx].Pretend = opts.pretend
 	}
 	return sessions, nil
 }

@@ -157,6 +157,16 @@ func (t *Target) Request() (*http.Request, error) {
 	return req, nil
 }
 
+func (t *Target) String() string {
+	if t.PauseTime > 0 {
+		return fmt.Sprintf("PAUSE %d", t.PauseTime)
+	} else if t.Comment != "" {
+		return t.Comment
+	} else {
+		return fmt.Sprintf("%s %s", t.Method, t.URL)
+	}
+}
+
 // Wrap a Scanner so we can cheat and look at the next value and react accordingly,
 // but still have it be around the next time we Scan() + Text()
 type peekingScanner struct {
