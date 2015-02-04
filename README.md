@@ -4,18 +4,39 @@
 
 ![Korra looks over Republic City](http://upload.wikimedia.org/wikipedia/en/5/5f/Legend_of_Korra_concept_art.png)
 
-Korra builds on [Vegeta](http://github.com/tsenart/vegeta)
+__Korra__ builds on [Vegeta](http://github.com/tsenart/vegeta)
 to process sessions that simulate one or many users moving through a workflow.
-While Vegeta focuses on maintaining a constant request rate of HTTP requests,
-Korra focuses on representing scripted user sessions, using Go's concurrency
-model to potentially represent many thousands of users on a single node.
+If you don't have that need you should go use Vegeta, or
+[wrk](https://github.com/wg/wrk), or
+[http-perf](http://www.hpl.hp.com/research/linux/httperf/), or 
+[Siege](http://www.joedog.org/siege-home/), or any of a number of other, 
+far more mature tools.
 
-Korra doesn't care how the sessions are generated, it's just concerned with
-moving users through and reporting on them. User scripts are represented in
-plain text in a format very similar to Vegeta, allowing custom headers and body
-per request along with additional directives to pause between steps, or poll a
-URL until either a particular status is received or a certain number of
-requests sent.
+Instead of focusing on generating massive amounts of random traffic __Korra__
+works with sessions you've scripted, walking through actions one at a time
+until they're complete and waiting until all the sessions are complete to
+finish up.  And we use Go's concurrency model to potentially represent many
+thousands of users on a single node.
+
+__Korra__ doesn't care how the sessions are generated, it's just concerned with
+moving users through the flow and reporting on them. User scripts are
+represented in plain text in a format very similar to Vegeta, allowing custom
+headers and body per request along with additional directives to pause between
+steps, or poll a URL until either a particular status is received or a certain
+number of requests sent.
+
+## TO DO
+
+* Reporting rethink (be able to output to file for pg `COPY`?)
+    * Put URLs into buckets that you specify (or we infer) and do histograms,
+      time based trends, etc.
+    * Filters for reporting and dump
+    * Slice by user, URL, timespan
+* Tests (currently just brought over from Vegeta, boo)
+* Sample scripts
+* Document `scan`
+* Documentation, godoc, other stuff I don't know about
+* Add thing about configuring Linux with higher ulimits
 
 ## Install
 
@@ -70,73 +91,49 @@ Specifies the number of CPUs to be used internally.
 It defaults to the amount of CPUs available in the system.
 
 ### sessions
+
 ```shell
 $ korra sessions -h
 Usage of korra sessions:
   -cert="": x509 Certificate file
+  -dir="some-dir": Directory with .txt files
   -keepalive=true: Use persistent connections
   -laddr=0.0.0.0: Local IP address
   -output="stdout": Output log of overall status
   -redirects=10: Number of redirects to follow
-  -targets="some-dir": Directory with .txt files
   -timeout=30s: Requests timeout
 ```
 
 #### -cert
+
 Specifies the x509 TLS certificate to be used with HTTPS requests.
 
 #### -keepalive
+
 Specifies whether to reuse TCP connections between HTTP requests.
 
 #### -laddr
+
 Specifies the local IP address to be used.
 
 #### -output
+
 Specifies the output log you can monitor to see overall status. Defaults to stdout.
 
+TODO: format of log output
+
 #### -redirects
+
 Specifies the max number of redirects followed on each request. The
 default is 10. When the value is -1, redirects are not followed but
 the response is marked as successful.
 
 #### -targets
-Specifies a directory with session scripts, each a line separated file.
-The format should be as follows, combining any or all of the following:
 
-Simple targets
-```
-GET http://goku:9090/path/to/dragon?item=balls
-GET http://user:password@goku:9090/path/to
-HEAD http://goku:9090/path/to/success
-```
-
-Targets with custom headers
-```
-GET http://user:password@goku:9090/path/to
-X-Account-ID: 8675309
-
-DELETE http://goku:9090/path/to/remove
-Confirmation-Token: 90215
-Authorization: Token DEADBEEF
-```
-
-Targets with custom bodies
-```
-POST http://goku:9090/things
-@/path/to/newthing.json
-
-PATCH http://goku:9090/thing/71988591
-@/path/to/thing-71988591.json
-```
-
-Targets with custom bodies and headers
-```
-POST http://goku:9090/things
-X-Account-ID: 99
-@/path/to/newthing.json
-```
+Specifies a directory with session scripts, see examples above.
 
 #### -timeout
+
 Specifies the timeout for each request. The default is 0 which disables
 timeouts.
 
@@ -166,6 +163,7 @@ Specifies the output file to which the report will be written to.
 Specifies the kind of report to be generated. It defaults to text.
 
 ##### text
+
 ```
 Requests      [total]                   1200
 Duration      [total, attack, wait]     10.094965987s, 9.949883921s, 145.082066ms
@@ -184,6 +182,7 @@ Get http://localhost:6060: http: can't write HTTP request on broken connection
 ```
 
 ##### json
+
 ```json
 {
   "latencies": {
@@ -215,6 +214,7 @@ Get http://localhost:6060: http: can't write HTTP request on broken connection
 }
 ```
 ##### plot
+
 Generates an HTML5 page with an interactive plot based on
 [Dygraphs](http://dygraphs.com).
 Click and drag to select a region to zoom into. Double click to zoom
@@ -225,6 +225,7 @@ to change the moving average window size (in data points).
 ![Plot](http://i.imgur.com/oi0cgGq.png)
 
 ##### hist
+
 Computes and prints a text based histogram for the given buckets.
 Each bucket upper bound is non-inclusive.
 ```
@@ -237,6 +238,7 @@ Bucket         #     %       Histogram
 ```
 
 ### dump
+
 ```
 $ korra dump -h
 Usage of korra dump:
