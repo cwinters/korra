@@ -1,4 +1,8 @@
-# Korra [![Build Status](https://secure.travis-ci.org/cwinters/korra.png)](http://travis-ci.org/cwinters/korra)
+# Korra 
+
+<!-- [Build Status](https://secure.travis-ci.org/cwinters/korra.png)](http://travis-ci.org/cwinters/korra) -->
+
+![Korra looks over Republic City](http://upload.wikimedia.org/wikipedia/en/5/5f/Legend_of_Korra_concept_art.png)
 
 Korra builds on [Vegeta](http://github.com/tsenart/vegeta)
 to process sessions that simulate one or many users moving through a workflow.
@@ -15,14 +19,15 @@ requests sent.
 
 ## Install
 
-You need go installed and `GOBIN` in your `PATH`. Once that is done, run the
-command:
+You need go installed and `GOBIN` in your `PATH`. Once that is done, run:
+
 ```shell
 $ go get github.com/cwinters/korra
 $ go install github.com/cwinters/korra
 ```
 
-## Usage manual
+## Use
+
 ```shell
 $ korra -h
 Usage: korra [globals] <command> [options]
@@ -60,6 +65,7 @@ examples:
 ```
 
 #### -cpus
+
 Specifies the number of CPUs to be used internally.
 It defaults to the amount of CPUs available in the system.
 
@@ -269,17 +275,14 @@ request latency in ns, bytes out, bytes in, and lastly the error.
 
 ### Sample filters
 
-
 #### Limitations
-
-There will be an upper bound of the supported `rate` which varies on the
-machine being used.
 
 You could be CPU bound (unlikely), memory bound (more likely) or
 have system resource limits being reached which ought to be tuned for
 the process execution. The important limits for us are file descriptors
 and processes. On a UNIX system you can get and set the current
 soft-limit values for a user.
+
 ```shell
 $ ulimit -n # file descriptors
 2560
