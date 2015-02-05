@@ -132,8 +132,8 @@ func Sessions(opts *sessionsOpts) error {
 					sessionsDone += 1
 				}
 			}
-			logChan <- fmt.Sprintf("%d of %d actions completed (%.2f%%); %d sessions complete",
-				actionsDone, actionCount, (float32(actionsDone)/float32(actionCount))*100, sessionsDone)
+			logChan <- fmt.Sprintf("%d/%d actions completed (%.2f%%); %d/%d sessions complete",
+				actionsDone, actionCount, (float32(actionsDone)/float32(actionCount))*100, sessionsDone, len(sessions))
 		}
 	}
 	return nil
