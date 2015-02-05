@@ -39,6 +39,7 @@ func (e *ResultEncoder) Close() {
 
 type Session struct {
 	Name     string
+	Path     string
 	Pretend  bool
 	Script   *SessionScript
 	attacker *Attacker
