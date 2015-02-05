@@ -17,12 +17,12 @@ type ResultEncoder struct {
 }
 
 // name should be the script path
-func NewResultEncoder(name string) *ResultEncoder {
-	encoderDir := path.Dir(name)
-	encoderName := strings.Replace(path.Base(name), ".txt", ".bin", -1)
+func NewResultEncoder(scriptPath string) *ResultEncoder {
+	encoderDir := path.Dir(scriptPath)
+	encoderName := strings.Replace(path.Base(scriptPath), ".txt", ".bin", -1)
 	encoderFullPath := path.Join(encoderDir, encoderName)
 	if encoderFile, err := os.Create(encoderFullPath); err != nil {
-		panic(fmt.Sprintf("Cannot create encoder for results [Path: %s] [session file: %s] => %s", encoderFullPath, name, err))
+		panic(fmt.Sprintf("Cannot create encoder for results [Path: %s] [session file: %s] => %s", encoderFullPath, scriptPath, err))
 	} else {
 		encoder := gob.NewEncoder(encoderFile)
 		return &ResultEncoder{encoderName, encoder, encoderFile}
@@ -60,6 +60,7 @@ func NewSession(scriptPath string, opts []func(*Attacker), logChan chan string) 
 	name := path.Base(scriptPath)
 	session := &Session{
 		Name:     name,
+		Path:     scriptPath,
 		Script:   script,
 		attacker: NewAttacker(opts...),
 		logChan:  logChan,
@@ -84,7 +85,7 @@ func (session *Session) Progress() SessionProgress {
 
 func (session *Session) Run(log chan string) {
 	session.running = true
-	enc := NewResultEncoder(session.Name)
+	enc := NewResultEncoder(session.Path)
 	go session.process(log)
 	for {
 		select {
