@@ -1,4 +1,4 @@
-# Korra 
+# Korra
 
 <!-- [Build Status](https://secure.travis-ci.org/cwinters/korra.png)](http://travis-ci.org/cwinters/korra) -->
 
@@ -8,14 +8,14 @@ __Korra__ builds on [Vegeta](http://github.com/tsenart/vegeta)
 to process sessions that simulate one or many users moving through a workflow.
 If you don't have that need you should go use Vegeta, or
 [wrk](https://github.com/wg/wrk), or
-[http-perf](http://www.hpl.hp.com/research/linux/httperf/), or 
-[Siege](http://www.joedog.org/siege-home/), or any of a number of other, 
+[http-perf](http://www.hpl.hp.com/research/linux/httperf/), or
+[Siege](http://www.joedog.org/siege-home/), or any of a number of other,
 far more mature tools.
 
 Instead of focusing on generating massive amounts of random traffic __Korra__
 works with sessions you've scripted, walking through actions one at a time
 until they're complete and waiting until all the sessions are complete to
-finish up.  And we use Go's concurrency model to potentially represent many
+finish up. And we use Go's concurrency model to potentially represent many
 thousands of users on a single node.
 
 __Korra__ doesn't care how the sessions are generated, it's just concerned with
@@ -85,10 +85,8 @@ examples:
   korra report -inputs='student_devices/student_01*.bin' -reporter="hist[0,100ms,200ms,300ms]"
 ```
 
-#### -cpus
-
-Specifies the number of CPUs to be used internally.
-It defaults to the amount of CPUs available in the system.
+* __-cpus__: Specifies the number of CPUs to be used internally. It defaults to
+  the amount of CPUs available in the system.
 
 ### sessions
 
@@ -104,38 +102,16 @@ Usage of korra sessions:
   -timeout=30s: Requests timeout
 ```
 
-#### -cert
-
-Specifies the x509 TLS certificate to be used with HTTPS requests.
-
-#### -keepalive
-
-Specifies whether to reuse TCP connections between HTTP requests.
-
-#### -laddr
-
-Specifies the local IP address to be used.
-
-#### -output
-
-Specifies the output log you can monitor to see overall status. Defaults to stdout.
-
-TODO: format of log output
-
-#### -redirects
-
-Specifies the max number of redirects followed on each request. The
-default is 10. When the value is -1, redirects are not followed but
-the response is marked as successful.
-
-#### -targets
-
-Specifies a directory with session scripts, see examples above.
-
-#### -timeout
-
-Specifies the timeout for each request. The default is 0 which disables
-timeouts.
+* __-cert__: Specifies the x509 TLS certificate to be used with HTTPS requests.
+* __-dir__: Specifies a directory with session scripts, see examples above.
+* -keepalive: Specifies whether to reuse TCP connections between HTTP requests.
+* __-laddr__:  Specifies the local IP address to be used.
+* __-output__: Specifies the output log you can monitor to see overall status. Defaults to stdout.  (TODO: format of log output)
+* __-redirects__: Specifies the max number of redirects followed on each request.
+  The default is 10. When the value is -1, redirects are not followed but the
+  response is marked as successful.
+* __-timeout__: Specifies the timeout for each request. The default is 0 which disables
+  timeouts.
 
 ### report
 ```
@@ -147,20 +123,12 @@ Usage of korra report:
   -
 ```
 
-#### -inputs
-
-Specifies the input files from which we'll generate the report.  These are the
-output of korra sessions. You can specify more than one (comma
-separated, as a glob, or as a directory with *.bin files) and they will be
-merged and sorted before being used by the reports.
-
-#### -output
-
-Specifies the output file to which the report will be written to.
-
-#### -reporter
-
-Specifies the kind of report to be generated. It defaults to text.
+* __-inputs__: Specifies the input files from which we'll generate the report.
+  These are the output of korra sessions. You can specify more than one (comma
+  separated, as a glob, or as a directory with *.bin files) and they will be
+  merged and sorted before being used by the reports.
+* __-output__: Specifies the output file to which the report will be written to.
+* __-reporter__: Specifies the kind of report to be generated. It defaults to text.
 
 ##### text
 
@@ -271,13 +239,7 @@ Dumps attack results as CSV records with six columns.
 The columns are: unix timestamp in ns since epoch, http status code,
 request latency in ns, bytes out, bytes in, and lastly the error.
 
-## More examples
-
-### Sample scripts
-
-### Sample filters
-
-#### Limitations
+## Limitations
 
 You could be CPU bound (unlikely), memory bound (more likely) or
 have system resource limits being reached which ought to be tuned for
@@ -293,11 +255,32 @@ $ ulimit -u # processes / threads
 ```
 Just pass a new number as the argument to change it.
 
-## Licence
+
+## Why "Korra"?
+
+[Vegeta](http://nicktoons.nick.com/shows/dragon-ball-z-kai/characters/vegeta.html)
+is a character on Dragonball Z who attacks a lot, so it's appropriate. I
+thought another cartoon character would be fun to use for this, and the last
+episode of [Legend of Korra](http://en.wikipedia.org/wiki/The_Legend_of_Korra)
+had recently ended so it was on my mind.
+
+![Balance, you say](http://imageserver.moviepilot.com/header-these-actors-need-to-be-in-a-live-action-legend-of-korra-movie.jpeg?width=500&height=281)
+
+First, I thought it would be great to pick a female character. But more
+specifically, Korra as the Avatar strives to bring balance to the world. She
+doesn't always know how to do it, or even make it possible once she does. But
+she tries. Load testing is something people rarely do, and when it's done we're
+often trying to explore the balance between features and performance, or
+between features and scaling.
+
+It's a stretch, but I'll stick with it.
+
+## License
+
 ```
 The MIT License (MIT)
 
-Copyright (c) 2014 Chris Winters
+Copyright (c) 2015 Chris Winters
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
