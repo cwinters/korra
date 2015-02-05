@@ -12,8 +12,8 @@ func main() {
 	commands := map[string]command{
 		"dump":     dumpCmd(),
 		"report":   reportCmd(),
-		"scan":     scanCmd(),
 		"sessions": sessionsCmd(),
+		"validate": validateCmd(),
 	}
 
 	flag.Usage = func() {

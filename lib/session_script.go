@@ -132,7 +132,7 @@ func scriptFile(scriptPath string) (io.Reader, error) {
 var (
 	supportedMethods = []string{"HEAD", "GET", "PUT", "POST", "PATCH", "OPTIONS"}
 	httpMethod       = regexp.MustCompile(fmt.Sprintf("^(%s)$", strings.Join(supportedMethods, "|")))
-	httpMethodLine   = regexp.MustCompile(fmt.Sprintf("^(POLL\\s+)?(%s)", strings.Join(supportedMethods, "|")))
+	httpMethodLine   = regexp.MustCompile(fmt.Sprintf("^(POLL )?(%s)", strings.Join(supportedMethods, "|")))
 )
 
 type SessionAction struct {
@@ -143,7 +143,7 @@ type SessionAction struct {
 }
 
 func (action *SessionAction) BadLine(offset int, message string) error {
-	action.Error = fmt.Errorf("@ line %d: %s", action.Line+offset, message)
+	action.Error = fmt.Errorf("Line %d: %s", action.Line+offset, message)
 	return action.Error
 }
 
@@ -192,6 +192,7 @@ func (action *SessionAction) CreateTarget(scriptDir string) error {
 		tgt.Method = tokens[0]
 		checkUrl = tokens[1]
 	}
+
 	if _, err := url.ParseRequestURI(checkUrl); err != nil {
 		return action.BadLine(0, fmt.Sprintf("Invalid URL: %s", checkUrl))
 	}
@@ -287,23 +288,27 @@ func ScanActions(reader io.Reader) ([]*SessionAction, error) {
 			continue
 		}
 		current := []string{line}
-		for {
-			nextLine := sc.Peek()
-			if nextLine == "" || internalCommentCommand.MatchString(nextLine) {
-				sc.Text() // discard and finish the action
-				break
-			} else if httpMethodLine.MatchString(nextLine) ||
-				externalCommentCommand.MatchString(nextLine) ||
-				pauseCommand.MatchString(nextLine) {
-				break // done with this target but keep the scanner at the line
-			} else {
-				sc.Scan()
-				current = append(current, sc.Text())
-				lineNumber += 1
+		if !isSingleLineCommand(line) {
+			for {
+				nextLine := sc.Peek()
+				if nextLine == "" || internalCommentCommand.MatchString(nextLine) {
+					sc.Text() // discard and finish the action
+					break
+				} else if httpMethodLine.MatchString(nextLine) || isSingleLineCommand(nextLine) {
+					break // done with this target but keep the scanner at the line
+				} else {
+					sc.Scan() // everything else is an HTTP command, just keep appending
+					current = append(current, sc.Text())
+					lineNumber += 1
+				}
 			}
 		}
 		action := &SessionAction{Raw: strings.Join(current, "\n"), Line: startLine}
 		actions = append(actions, action)
 	}
 	return actions, nil
+}
+
+func isSingleLineCommand(line string) bool {
+	return pauseCommand.MatchString(line) || externalCommentCommand.MatchString(line)
 }

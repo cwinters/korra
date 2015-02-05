@@ -5,25 +5,28 @@
 ![Korra looks over Republic City](http://upload.wikimedia.org/wikipedia/en/5/5f/Legend_of_Korra_concept_art.png)
 
 __Korra__ builds on [Vegeta](http://github.com/tsenart/vegeta)
-to process sessions that simulate one or many users moving through a workflow.
-If you don't have that need you should go use Vegeta, or
-[wrk](https://github.com/wg/wrk), or
-[http-perf](http://www.hpl.hp.com/research/linux/httperf/), or
-[Siege](http://www.joedog.org/siege-home/), or any of a number of other,
-far more mature tools.
+to process sessions that simulate one or many users moving through a prescribed
+workflow. This is quite different from typical load testing tools, and if
+you're trying to flood your site with customers randomly browsing your product
+catalog you should use something like:
 
-Instead of focusing on generating massive amounts of random traffic __Korra__
-works with sessions you've scripted, walking through actions one at a time
-until they're complete and waiting until all the sessions are complete to
-finish up. And we use Go's concurrency model to potentially represent many
-thousands of users on a single node.
+* [Vegeta](http://github.com/tsenart/vegeta)
+* [wrk](https://github.com/wg/wrk)
+* [http-perf](http://www.hpl.hp.com/research/linux/httperf/)
+* [Siege](http://www.joedog.org/siege-home/)
+
+or any of a number of other, far more mature tools.
+
+So __Korra__ works with sessions you've scripted, walking through actions one
+at a time until they're complete and waiting until all the sessions are
+complete to finish up. And we use Go's concurrency model to potentially
+represent many thousands of users on a single node.
 
 __Korra__ doesn't care how the sessions are generated, it's just concerned with
 moving users through the flow and reporting on them. User scripts are
 represented in plain text in a format very similar to Vegeta, allowing custom
 headers and body per request along with additional directives to pause between
-steps, or poll a URL until either a particular status is received or a certain
-number of requests sent.
+steps, or poll a URL until a specified halt condition.
 
 ## TO DO
 
@@ -40,12 +43,55 @@ number of requests sent.
 
 ## Install
 
-You need go installed and `GOBIN` in your `PATH`. Once that is done, run:
+You need [go](http://golang.org/) installed and `GOBIN` in your `PATH`. Once
+that is done, run:
 
 ```shell
 $ go get github.com/cwinters/korra
 $ go install github.com/cwinters/korra
 ```
+
+## Commands
+
+### Sessions
+
+### Validate
+
+The `validate` command is a kind of linter for your scripts. It will check all of
+the following:
+
+* HTTP invocations are valid (e.g., not just `POLL GET`)
+* HTTP methods are valid
+* HTTP URLs can be parsed
+* HTTP body file references exist
+* Headers have values
+* `PAUSE` has an integer argument
+* Polling parameters are integers or valid regular expressions
+
+These checks are done for all actions in the specified file and default
+behavior is to display only problems. Passing in `-verbose` will display a
+summary of every action, which can be a useful sanity check.
+
+Examples:
+
+    $ korra validate -file user_19949.txt
+    ===== FILE user_19949.txt OK
+    
+    $ korra validate -file user_19950.txt
+    ===== FILE user_19950.txt FAIL 2
+    Line 2: Invalid HTTP method: POLLGET
+    Line 10: Expected int as argument to PAUSE, got 'a-while'
+    
+    $ korra validate -file 'scripts/*.txt'
+    ===== FILE scripts/user_105967.txt FAIL 1
+    Line 10: Expected int as argument to PAUSE, got 'a-while'
+    ===== FILE scripts/user_105968.txt OK
+    ===== FILE scripts/user_105969.txt OK
+
+### Dump
+
+### Report
+
 
 ## Use
 
@@ -181,6 +227,7 @@ Get http://localhost:6060: http: can't write HTTP request on broken connection
   ]
 }
 ```
+
 ##### plot
 
 Generates an HTML5 page with an interactive plot based on
