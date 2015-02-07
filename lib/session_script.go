@@ -130,6 +130,7 @@ func scriptFile(scriptPath string) (io.Reader, error) {
 }
 
 var (
+	// TODO support additional methods via config? environment variable with added?
 	supportedMethods = []string{"HEAD", "GET", "PUT", "POST", "PATCH", "OPTIONS"}
 	httpMethod       = regexp.MustCompile(fmt.Sprintf("^(%s)$", strings.Join(supportedMethods, "|")))
 	httpMethodLine   = regexp.MustCompile(fmt.Sprintf("^(POLL )?(%s)", strings.Join(supportedMethods, "|")))

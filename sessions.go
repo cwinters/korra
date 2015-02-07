@@ -27,13 +27,14 @@ func sessionsCmd() command {
 	}
 
 	fs.StringVar(&opts.certf, "cert", "", "x509 Certificate file")
+	fs.StringVar(&opts.sessiond, "dir", "", "Directory of sessions")
 	fs.Var(&opts.headers, "header", "Request header")
 	fs.BoolVar(&opts.keepalive, "keepalive", true, "Use persistent connections")
 	fs.Var(&opts.laddr, "laddr", "Local IP address")
 	fs.StringVar(&opts.logf, "log", "stdout", "Overall log")
 	fs.BoolVar(&opts.pretend, "pretend", false, "Do everything but send traffic")
 	fs.IntVar(&opts.redirects, "redirects", korra.DefaultRedirects, "Number of redirects to follow. -1 will not follow but marks as success")
-	fs.StringVar(&opts.sessiond, "dir", "", "Directory of sessions")
+	fs.IntVar(&opts.statusSec, "status", 30, "Interval to log overall status, in seconds")
 	fs.DurationVar(&opts.timeout, "timeout", korra.DefaultTimeout, "Requests timeout")
 
 	return command{fs, func(args []string) error {
@@ -58,6 +59,7 @@ type sessionsOpts struct {
 	pretend   bool
 	redirects int
 	sessiond  string
+	statusSec int
 	timeout   time.Duration
 }
 
@@ -122,7 +124,7 @@ func Sessions(opts *sessionsOpts) error {
 				session.Stop() // wait for each session to finish up?
 			}
 			return nil
-		case <-time.After(30 * time.Second):
+		case <-time.After(time.Duration(opts.statusSec) * time.Second):
 			actionCount, actionsDone, sessionsDone := 0, 0, 0
 			for _, session := range sessions {
 				progress := session.Progress()
@@ -132,8 +134,10 @@ func Sessions(opts *sessionsOpts) error {
 					sessionsDone += 1
 				}
 			}
-			logChan <- fmt.Sprintf("%d/%d actions completed (%.2f%%); %d/%d sessions complete",
-				actionsDone, actionCount, (float32(actionsDone)/float32(actionCount))*100, sessionsDone, len(sessions))
+			sessionCount := len(sessions)
+			logChan <- fmt.Sprintf("%d/%d actions complete (%.2f%%); %d/%d sessions complete (%.2f%%)",
+				actionsDone, actionCount, (float32(actionsDone)/float32(actionCount))*100,
+				sessionsDone, sessionCount, (float32(sessionsDone)/float32(sessionCount))*100)
 		}
 	}
 	return nil

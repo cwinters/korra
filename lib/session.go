@@ -120,30 +120,33 @@ func (session *Session) Stop() {
 func (session *Session) process(log chan string) {
 	for session.Script.ActionsRemain() {
 		action := session.Script.NextAction()
-
-		//for _, action := range session.Script.Actions {
 		target := action.Target
 		if target.IsComment() {
 			session.log(target.Comment)
 		} else if target.IsPause() {
-			if session.Pretend {
-				session.log(fmt.Sprintf("Sleeping (pretend) (%d ms)...", target.PauseTime))
-				continue
-			}
-			session.log(fmt.Sprintf("Sleeping (%d ms)...", target.PauseTime))
-			select {
-			case <-session.stopper:
-				return
-			case <-time.After(time.Duration(target.PauseTime) * time.Millisecond):
-			}
+			session.pause(target.PauseTime)
 		} else {
-			session.processTarget(action, target)
+			session.doHttp(action)
 		}
 	}
 	session.stopper <- struct{}{}
 }
 
-func (session *Session) processTarget(action *SessionAction, target *Target) {
+func (session *Session) pause(pauseMillis int) {
+	if session.Pretend {
+		session.log(fmt.Sprintf("Sleeping (pretend) (%d ms)...", pauseMillis))
+		return
+	}
+	session.log(fmt.Sprintf("Sleeping (%d ms)...", pauseMillis))
+	select {
+	case <-session.stopper:
+		return
+	case <-time.After(time.Duration(pauseMillis) * time.Millisecond):
+	}
+}
+
+func (session *Session) doHttp(action *SessionAction) {
+	target := action.Target
 	if session.Pretend {
 		session.log(fmt.Sprintf("%d (pretend) => %s %s, %d ms",
 			200, target.Method, target.URL, 0))
@@ -155,7 +158,7 @@ func (session *Session) processTarget(action *SessionAction, target *Target) {
 	requests := 1
 	for {
 		timestamp := time.Now()
-		result := session.attacker.Hit(targeter, timestamp)
+		result := session.attacker.Hit(targeter, timestamp, requests)
 		session.log(fmt.Sprintf("%d => %s %s, %d ms",
 			result.Code, result.Method, result.URL, int64(result.Latency/time.Millisecond)))
 		session.results <- result

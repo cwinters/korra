@@ -36,9 +36,8 @@ steps, or poll a URL until a specified halt condition.
     * Filters for reporting and dump
     * Slice by user, URL, timespan
 * Tests (currently just brought over from Vegeta, boo)
-* Sample scripts
-* Document `scan`
-* Documentation, godoc, other stuff I don't know about
+* Document in README: sample scripts, more discussion of generating script
+* godoc, other stuff I don't know about
 * Add thing about configuring Linux with higher ulimits
 
 ## Install
@@ -51,14 +50,159 @@ $ go get github.com/cwinters/korra
 $ go install github.com/cwinters/korra
 ```
 
+After that run `korra` from the command-line to see if you've got everything
+setup.
+
+## Scripts
+
+Scripts are text files that specify a few commands:
+
+* Execute an HTTP request
+* Pause execution
+* Output a comment to the log
+
+Many commands are a single line, but they can also use successive lines for
+
+### HTTP commands
+
+An HTTP command looks like:
+
+    http-method url
+    [header-key: header-value]
+    [@request-body-reference]
+
+The first line is common to pretty much every load testing tool -- an HTTP
+method and URL to hit. __Korra__ supports the following HTTP methods: GET,
+HEAD, OPTIONS, PATCH, POST, and PUT. Adding more is fairly trivial.
+
+Similar to [Vegeta](https://github.com/tsenart/vegeta) __Korra__ supports both per-request headers and request bodies.
+Headers are sent as-is, though we trim any leading and trailing whitespace from
+both the key and value. Empty values are not allowed.
+
+Request body references are paths relative to the script file with the content
+of the body, and __Korra__ will refuse to start if any body reference is
+invalid.
+
+For example, here's a sequence of two HTTP commands separated by a pause:
+
+    GET http://link.to/your/self
+    PAUSE 4850
+    GET http://link.to/your/team
+
+And here's the same thing but with additional context for each HTTP command:
+
+    GET http://link.to/your/self
+    Authorization: Token ABCDEFG
+    PAUSE 4850
+    GET http://link.to/your/team
+    Authorization: Token ABCDEFG
+    Accept: image/*
+
+Here's another example, this time with headers and a body reference:
+
+    POST http://link.to/your/team
+    Authorization: Token ABCDEFG
+    Content-Type: application/json
+    @post/user_4512/1.json
+    PATCH http://link.to/your/team/55
+    Authorization: Token ABCDEFG
+    Content-Type: application/json-patch+json
+    @post/user_4512/2.json
+
+Each HTTP request will result in an entry in the performance data. You'll see
+entries in the log like:
+
+    15:36:53.542024 user_110213.txt 8/23: 200 => GET https://api.com/pages/students/answers/4321, 374 ms
+    15:36:53.543519 user_112635.txt 11/19: 201 => POST https://api.com/api/assignments/7654/share, 53 ms
+
+### Polling HTTP commands
+
+Polling HTTP commands are only slightly different from HTTP commands -- prefix
+the method with `POLL` and allow an optional set of parameters to configure
+polling:
+
+    POLL http-method url
+    [header-key: header-value]
+    [@request-body-reference]
+    [[Wait=time-in-ms Count=max-polls Status=regex-indicating-stop]]
+
+By default the polling parameters are:
+
+    [Wait=1000 Count=5 Status=^2\d\d$]
+
+which means we'll poll the given method + URL, waiting 1 second between polls,
+until the first of:
+
+* we've polled five times, or
+* we get a 200 status
+
+So say we've got a `GET` that will return a `204` until our resource is fully
+baked, at which point it will return a `200`. To poll for that we might do
+this:
+
+    POLL GET http://link.to/my/baked/resource
+    Accept: application/json
+    Authorization: Token ABCDEF
+    [Wait=1500 Status=200]
+
+Each poll will result in a separate entry in the performance data.
+
+You'll see polls in the log as:
+
+    15:36:52.26492 user_112762.txt 12/31: 204 => GET https://api.com/pages/students/answers/latest, 29 ms
+    15:36:52.264939 user_112762.txt 12/31: Attempt 1 requires retry, 2000 ms pause until next poll
+    15:36:54.289954 user_112762.txt 12/31: 204 => GET https://api.com/pages/students/answers/latest, 24 ms
+    15:36:54.289974 user_112762.txt 12/31: Attempt 2 requires retry, 2000 ms pause until next poll
+    15:36:56.312294 user_112762.txt 12/31: 204 => GET https://api.com/pages/students/answers/latest, 22 ms
+    15:36:56.312315 user_112762.txt 12/31: Attempt 3 requires retry, 2000 ms pause until next poll
+    15:36:58.385529 user_112762.txt 12/31: 200 => GET https://api.com/pages/students/answers/latest, 73 ms
+
+Additionally every result has the `RequestCount` attribute; for non-polled
+requests this will always be `1`. For polled requests it will request the poll
+number (starting at 1) so you can report on a distribution of how many polls it
+takes to retrieve a particular resource.
+
+### Pauses
+
+A `PAUSE` does what it says, pauses that session a given number of
+milliseconds:
+
+    PAUSE 5918
+
+If you watch the log you'll see this logged as:
+
+    15:36:21.668284 user_112762.txt 10/31: Sleeping (30453 ms)...
+
+Pausing has no impact on any other session.
+
+### Comments
+
+A `COMMENT` just results in a message sent to the log, with the message as
+everything after the `COMMENT` dierective. So from:
+
+    COMMENT ===== Start assignment 'Thinking about the emotions of color'
+
+You'll see a logging message:
+
+    15:36:24.912834 user_112762.txt 11/31: ===== Start assignment 'Thinking about the emotions of color'
+
+Comments have no functional impact on the session.
+
 ## Commands
 
 ### Sessions
 
+The `sessions` command is the heart of __Korra__. It takes a directory of
+session files and executes them all, recording performance data for each. (It
+also takes a series of arguments to configure HTTP client behavior, but we'll
+deal with that later.)
+
+
 ### Validate
 
-The `validate` command is a kind of linter for your scripts. It will check all of
-the following:
+The `validate` command tells you as much as it can about whether your scripts
+can be processed without actually running them. It will check all of the
+following:
 
 * HTTP invocations are valid (e.g., not just `POLL GET`)
 * HTTP methods are valid
@@ -76,12 +220,12 @@ Examples:
 
     $ korra validate -file user_19949.txt
     ===== FILE user_19949.txt OK
-    
+
     $ korra validate -file user_19950.txt
     ===== FILE user_19950.txt FAIL 2
     Line 2: Invalid HTTP method: POLLGET
     Line 10: Expected int as argument to PAUSE, got 'a-while'
-    
+
     $ korra validate -file 'scripts/*.txt'
     ===== FILE scripts/user_105967.txt FAIL 1
     Line 10: Expected int as argument to PAUSE, got 'a-while'
@@ -89,6 +233,10 @@ Examples:
     ===== FILE scripts/user_105969.txt OK
 
 ### Dump
+
+The `dump` command just serializes every performance result from the Go
+serialization format ([gob](http://golang.org/pkg/encoding/gob/)) to either CSV
+or JSON.
 
 ### Report
 

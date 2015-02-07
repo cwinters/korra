@@ -116,12 +116,12 @@ func TLSConfig(c *tls.Config) func(*Attacker) {
 // Hit reads the next target from the targeter and sends the HTTP request with
 // the headers and body from the Target, recording the bytes sent and received,
 // the status code and error message.
-func (a *Attacker) Hit(targeter Targeter, tm time.Time) *Result {
+func (a *Attacker) Hit(targeter Targeter, tm time.Time, requestCount int) *Result {
 	var (
 		err      error
 		request  *http.Request
 		response *http.Response
-		result   = Result{Timestamp: tm}
+		result   = Result{Timestamp: tm, RequestCount: requestCount}
 		tgt      *Target
 	)
 
