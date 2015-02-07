@@ -47,6 +47,10 @@ func dump(dumper, inputs, output string) error {
 	}
 	defer out.Close()
 
+	if dumpHeaders[dumper] != nil {
+		out.Write(dumpHeaders[dumper].Header())
+	}
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 	res, errs := korra.Collect(srcs...)
@@ -77,4 +81,9 @@ func dump(dumper, inputs, output string) error {
 var dumpers = map[string]korra.Dumper{
 	"csv":  korra.DumpCSV,
 	"json": korra.DumpJSON,
+}
+
+var dumpHeaders = map[string]korra.DumpHeader{
+	"csv":  korra.DumpCSVHeader,
+	"json": nil,
 }
