@@ -61,7 +61,8 @@ Scripts are text files that specify a few commands:
 * Pause execution
 * Output a comment to the log
 
-Many commands are a single line, but they can also use successive lines for
+Some commands comprise a single line, but they can also use successive lines
+for additional context.
 
 ### HTTP commands
 
@@ -72,12 +73,13 @@ An HTTP command looks like:
     [@request-body-reference]
 
 The first line is common to pretty much every load testing tool -- an HTTP
-method and URL to hit. __Korra__ supports the following HTTP methods: GET,
-HEAD, OPTIONS, PATCH, POST, and PUT. Adding more is fairly trivial.
+method and URL to hit. __Korra__ supports the HTTP methods: GET, HEAD, OPTIONS,
+PATCH, POST, and PUT. Adding more is fairly trivial but we need a good use case.
 
-Similar to [Vegeta](https://github.com/tsenart/vegeta) __Korra__ supports both per-request headers and request bodies.
-Headers are sent as-is, though we trim any leading and trailing whitespace from
-both the key and value. Empty values are not allowed.
+Similar to [Vegeta](https://github.com/tsenart/vegeta) __Korra__ supports both
+per-request headers and request bodies.  Headers are sent as-is, though we trim
+any leading and trailing whitespace from both the key and value. Empty values
+are not allowed.
 
 Request body references are paths relative to the script file with the content
 of the body, and __Korra__ will refuse to start if any body reference is
@@ -140,22 +142,24 @@ So say we've got a `GET` that will return a `204` until our resource is fully
 baked, at which point it will return a `200`. To poll for that we might do
 this:
 
-    POLL GET http://link.to/my/baked/resource
+    POLL GET http://api.com/my/baked/resource
     Accept: application/json
     Authorization: Token ABCDEF
     [Wait=1500 Status=200]
 
 Each poll will result in a separate entry in the performance data.
 
-You'll see polls in the log as:
+You might see the above command result in the log entries:
 
-    15:36:52.26492 user_112762.txt 12/31: 204 => GET https://api.com/pages/students/answers/latest, 29 ms
+    15:36:52.26492 user_112762.txt 12/31: 204 => GET https://api.com/my/baked/resource, 29 ms
     15:36:52.264939 user_112762.txt 12/31: Attempt 1 requires retry, 2000 ms pause until next poll
-    15:36:54.289954 user_112762.txt 12/31: 204 => GET https://api.com/pages/students/answers/latest, 24 ms
+    15:36:54.289954 user_112762.txt 12/31: 204 => GET https://api.com/my/baked/resource, 24 ms
     15:36:54.289974 user_112762.txt 12/31: Attempt 2 requires retry, 2000 ms pause until next poll
-    15:36:56.312294 user_112762.txt 12/31: 204 => GET https://api.com/pages/students/answers/latest, 22 ms
+    15:36:56.312294 user_112762.txt 12/31: 204 => GET https://api.com/my/baked/resource, 22 ms
     15:36:56.312315 user_112762.txt 12/31: Attempt 3 requires retry, 2000 ms pause until next poll
-    15:36:58.385529 user_112762.txt 12/31: 200 => GET https://api.com/pages/students/answers/latest, 73 ms
+    15:36:58.385529 user_112762.txt 12/31: 200 => GET https://api.com/my/baked/resource, 73 ms
+
+which would turn up in four separate entries in the performance data.
 
 Additionally every result has the `RequestCount` attribute; for non-polled
 requests this will always be `1`. For polled requests it will request the poll
