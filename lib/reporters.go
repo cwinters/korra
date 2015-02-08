@@ -10,6 +10,73 @@ import (
 	"time"
 )
 
+type PathBucket struct {
+	Results   Results
+	pieces    []string
+	variances []int
+}
+
+func NewPathBucket(pathPieces []string, result *Result) PathBucket {
+	results := Results{result}
+	bucket := PathBucket{results, pathPieces, make([]int, len(pathPieces))}
+	fmt.Printf("Created new Path bucket [%s], variances: %s\n", pathPieces, bucket.variances)
+	return bucket
+}
+
+func PathToPieces(path string) []string {
+	normalized := strings.Trim(path, "/")
+	return strings.Split(normalized, "/")
+}
+
+func (b *PathBucket) Track(checkPieces []string, result *Result) bool {
+	if len(checkPieces) != len(b.pieces) {
+		return false
+	}
+	variantCount, variantIdx := 0, -1
+	for idx, toCheck := range checkPieces {
+		if toCheck != b.pieces[idx] {
+			variantCount += 1
+			variantIdx = idx
+		}
+	}
+	if variantCount > 1 {
+		return false
+	}
+	b.variances[variantIdx] += 1
+	b.Results = append(b.Results, result)
+	return true
+}
+
+func (b *PathBucket) String() string {
+	toDisplay := make([]string, len(b.pieces))
+	for idx, piece := range b.pieces {
+		if b.variances[idx] == 0 {
+			toDisplay[idx] = piece
+		} else {
+			toDisplay[idx] = "*"
+		}
+	}
+	return "/" + strings.Join(toDisplay, "/")
+}
+
+func CreateBuckets(results Results) []PathBucket {
+	var buckets []PathBucket
+	for _, result := range results {
+		pathPieces := PathToPieces(result.Path)
+		foundBucket := -1
+		for idx, bucket := range buckets {
+			if bucket.Track(pathPieces, result) {
+				foundBucket = idx
+				break
+			}
+		}
+		if foundBucket == -1 {
+			buckets = append(buckets, NewPathBucket(pathPieces, result))
+		}
+	}
+	return buckets
+}
+
 // Reporter is an interface defining Report computation.
 type Reporter interface {
 	Report(Results) ([]byte, error)
@@ -78,6 +145,15 @@ func (h HistogramReporter) String() string {
 	return "[" + strings.Join(strs, ",") + "]"
 }
 
+var ReportTest ReporterFunc = func(r Results) ([]byte, error) {
+	buckets := CreateBuckets(r)
+	out := &bytes.Buffer{}
+	for _, bucket := range buckets {
+		fmt.Fprintf(out, "%s: %d\n", bucket.String(), len(bucket.Results))
+	}
+	return out.Bytes(), nil
+}
+
 // ReportText returns a computed Metrics struct as aligned, formatted text.
 var ReportText ReporterFunc = func(r Results) ([]byte, error) {
 	m := NewMetrics(r)
@@ -109,22 +185,6 @@ var ReportText ReporterFunc = func(r Results) ([]byte, error) {
 // ReportJSON writes a computed Metrics struct to as JSON
 var ReportJSON ReporterFunc = func(r Results) ([]byte, error) {
 	return json.Marshal(NewMetrics(r))
-}
-
-var ReportDump ReporterFunc = func(r Results) ([]byte, error) {
-	out := &bytes.Buffer{}
-	w := tabwriter.NewWriter(out, 0, 8, 2, '\t', tabwriter.StripEscape)
-	for idx, result := range r {
-		fmt.Fprintf(w, "%d\t%d\t%d\t%s\n", idx, result.Code,
-			int64(result.Latency/time.Millisecond), result.Method+" "+result.URL)
-	}
-
-	// TODO: Break down the Method + URLs into groups, calculate counts of status codes, times
-
-	if err := w.Flush(); err != nil {
-		return []byte{}, err
-	}
-	return out.Bytes(), nil
 }
 
 // ReportPlot builds up a self contained HTML page with an interactive plot

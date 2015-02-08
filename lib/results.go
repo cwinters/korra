@@ -3,6 +3,7 @@ package korra
 import (
 	"encoding/gob"
 	"io"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -22,11 +23,20 @@ type Result struct {
 	Method       string        `json:"method"`
 	RequestCount int           `json:"request_count"`
 	Timestamp    time.Time     `json:"timestamp"`
-	URL          string        `json:"url"`
+	Path         string        `json:"path"`
 }
 
 func (result *Result) HasErrorCode() bool {
 	return result.Code < 200 || result.Code >= 400
+}
+
+var pathFromUrl = regexp.MustCompile("^\\w+://[^/]+(.*)$")
+
+func (result *Result) PathFromURL(url string) {
+	matches := pathFromUrl.FindStringSubmatch(url)
+	if matches != nil && len(matches) == 2 {
+		result.Path = matches[1]
+	}
 }
 
 // Collect concurrently reads Results from multiple io.Readers until all of

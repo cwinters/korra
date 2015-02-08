@@ -160,7 +160,7 @@ func (session *Session) doHttp(action *SessionAction) {
 		timestamp := time.Now()
 		result := session.attacker.Hit(targeter, timestamp, requests)
 		session.log(fmt.Sprintf("%d => %s %s, %d ms",
-			result.Code, result.Method, result.URL, int64(result.Latency/time.Millisecond)))
+			result.Code, result.Method, result.Path, int64(result.Latency/time.Millisecond)))
 		session.results <- result
 		if target.Poller.ShouldRetry(requests, int(result.Code)) {
 			pauseMillis := target.Poller.WaitBetweenPolls

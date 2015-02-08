@@ -135,8 +135,8 @@ func (a *Attacker) Hit(targeter Targeter, tm time.Time, requestCount int) *Resul
 	if tgt, err = targeter(); err != nil {
 		return &result
 	}
-	result.URL = tgt.URL
 	result.Method = tgt.Method
+	result.PathFromURL(tgt.URL)
 
 	if request, err = tgt.Request(); err != nil {
 		return &result

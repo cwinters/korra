@@ -25,7 +25,7 @@ func (f DumperFunc) Dump(r *Result) ([]byte, error) { return f(r) }
 func (f HeaderFunc) Header() []byte                 { return f() }
 
 var DumpCSVHeader HeaderFunc = func() []byte {
-	return []byte("Timestamp\tStatus\tMethod\tURL\tRequestCount\tLatency\tBytes Out\tBytes In\tError\n")
+	return []byte("Timestamp\tStatus\tMethod\tPath\tRequestCount\tLatency\tBytes Out\tBytes In\tError\n")
 }
 
 // DumpCSV dumps a Result as a CSV record with six columns.
@@ -37,7 +37,7 @@ var DumpCSV DumperFunc = func(r *Result) ([]byte, error) {
 		r.Timestamp.UnixNano(),
 		r.Code,
 		r.Method,
-		r.URL,
+		r.Path,
 		r.RequestCount,
 		r.Latency.Nanoseconds(),
 		r.BytesOut,

@@ -39,8 +39,8 @@ func report(reporter, inputs, output, filters string) error {
 		rep = korra.ReportJSON
 	case "plot":
 		rep = korra.ReportPlot
-	case "dump":
-		rep = korra.ReportDump
+	case "test":
+		rep = korra.ReportTest
 	case "hist":
 		if len(reporter) < 6 {
 			return fmt.Errorf("bad buckets: '%s'", reporter[4:])
@@ -133,9 +133,9 @@ func newFilterGroup(filterSpecs string, results korra.Results) ResultFilterGroup
 			group.filters = append(group.filters, func(result *korra.Result) bool {
 				return result.Method == pieces[1]
 			})
-		case "URL":
+		case "Path":
 			group.filters = append(group.filters, func(result *korra.Result) bool {
-				return strings.Contains(result.URL, pieces[1])
+				return strings.Contains(result.Path, pieces[1])
 			})
 		// Examples:
 		//    Time=1m  => Include results from start to 1 minute after start

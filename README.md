@@ -19,8 +19,9 @@ or any of a number of other, far more mature tools.
 
 So __Korra__ works with sessions you've scripted, walking through actions one
 at a time until they're complete and waiting until all the sessions are
-complete to finish up. And we use Go's concurrency model to potentially
-represent many thousands of users on a single node.
+complete to finish up. Every session is separate from every other session, and
+we use Go's concurrency model to potentially represent many thousands of users
+on a single node.
 
 __Korra__ doesn't care how the sessions are generated, it's just concerned with
 moving users through the flow and reporting on them. User scripts are
@@ -114,8 +115,8 @@ Here's another example, this time with headers and a body reference:
 Each HTTP request will result in an entry in the performance data. You'll see
 entries in the log like:
 
-    15:36:53.542024 user_110213.txt 8/23: 200 => GET https://api.com/pages/students/answers/4321, 374 ms
-    15:36:53.543519 user_112635.txt 11/19: 201 => POST https://api.com/api/assignments/7654/share, 53 ms
+    15:36:53.542024 user_110213.txt 8/23: 200 => GET /pages/students/answers/4321, 374 ms
+    15:36:53.543519 user_112635.txt 11/19: 201 => POST /api/assignments/7654/share, 53 ms
 
 ### Polling HTTP commands
 
@@ -151,13 +152,13 @@ Each poll will result in a separate entry in the performance data.
 
 You might see the above command result in the log entries:
 
-    15:36:52.26492 user_112762.txt 12/31: 204 => GET https://api.com/my/baked/resource, 29 ms
+    15:36:52.26492 user_112762.txt 12/31: 204 => GET /my/baked/resource, 29 ms
     15:36:52.264939 user_112762.txt 12/31: Attempt 1 requires retry, 2000 ms pause until next poll
-    15:36:54.289954 user_112762.txt 12/31: 204 => GET https://api.com/my/baked/resource, 24 ms
+    15:36:54.289954 user_112762.txt 12/31: 204 => GET /my/baked/resource, 24 ms
     15:36:54.289974 user_112762.txt 12/31: Attempt 2 requires retry, 2000 ms pause until next poll
-    15:36:56.312294 user_112762.txt 12/31: 204 => GET https://api.com/my/baked/resource, 22 ms
+    15:36:56.312294 user_112762.txt 12/31: 204 => GET /my/baked/resource, 22 ms
     15:36:56.312315 user_112762.txt 12/31: Attempt 3 requires retry, 2000 ms pause until next poll
-    15:36:58.385529 user_112762.txt 12/31: 200 => GET https://api.com/my/baked/resource, 73 ms
+    15:36:58.385529 user_112762.txt 12/31: 200 => GET /my/baked/resource, 73 ms
 
 which would turn up in four separate entries in the performance data.
 
@@ -194,6 +195,28 @@ Comments have no functional impact on the session.
 
 ## Commands
 
+### Arguments
+
+#### Globs and directories
+
+Arguments that take a single file can typically take a 
+[glob](http://golang.org/pkg/path/filepath/#Glob). But you need to ensure that
+__Korra__ gets the glob, not the shell. So you'll need to single-quote it:
+
+    # OK
+    $ korra validate -file 'data/*.bin'
+    $ korra report -inputs 'data/user_1*.bin'
+
+    
+    # NOT OK
+    $ korra validate -file data/*.bin
+    $ korra report -inputs data/user_1*.bin
+
+Additionally we'll try to do the right thing if you provide a directory
+instead. An argument defining scripts will expand a `{directory}` to
+`{directory}/*.txt`; one defining results will expand it to
+`{directory}/*.bin`.
+
 ### Sessions
 
 The `sessions` command is the heart of __Korra__. It takes a directory of
@@ -220,7 +243,7 @@ These checks are done for all actions in the specified file and default
 behavior is to display only problems. Passing in `-verbose` will display a
 summary of every action, which can be a useful sanity check.
 
-Examples:
+Examples against a single file and glob:
 
     $ korra validate -file user_19949.txt
     ===== FILE user_19949.txt OK
