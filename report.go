@@ -28,19 +28,14 @@ func reportCmd() command {
 // report validates the report arguments, sets up the required resources
 // and writes the report
 func report(reporter, inputs, output, filters string) error {
-	if len(reporter) < 4 {
-		return fmt.Errorf("bad reporter: %s", reporter)
-	}
 	var rep korra.Reporter
-	switch reporter[:4] {
+	switch reporter {
 	case "text":
 		rep = korra.ReportText
 	case "json":
 		rep = korra.ReportJSON
 	case "plot":
 		rep = korra.ReportPlot
-	case "test":
-		rep = korra.ReportTest
 	case "hist":
 		if len(reporter) < 6 {
 			return fmt.Errorf("bad buckets: '%s'", reporter[4:])
@@ -52,21 +47,24 @@ func report(reporter, inputs, output, filters string) error {
 		rep = hist
 	}
 
+	if rep == nil {
+		return fmt.Errorf("unknown reporter: %s", reporter)
+	}
 	var (
 		err error
+		in  *os.File
+		out *os.File
 	)
 	files := korra.GlobResults(inputs)
 	srcs := make([]io.Reader, len(files))
 	for i, f := range files {
-		in, err := korra.File(f, false)
-		if err != nil {
+		if in, err = korra.File(f, false); err != nil {
 			return err
 		}
 		defer in.Close()
 		srcs[i] = in
 	}
-	out, err := korra.File(output, true)
-	if err != nil {
+	if out, err = korra.File(output, true); err != nil {
 		return err
 	}
 	defer out.Close()

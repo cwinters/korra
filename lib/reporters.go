@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -162,26 +163,29 @@ func (h HistogramReporter) String() string {
 	return "[" + strings.Join(strs, ",") + "]"
 }
 
-var ReportTest ReporterFunc = func(r Results) ([]byte, error) {
-	buckets := CreateBuckets(r)
+// ReportText returns a set of computed Metrics structs as aligned, formatted
+// text -- one for overall performance, and one for each URL bucket.
+var ReportText ReporterFunc = func(r Results) ([]byte, error) {
 	out := &bytes.Buffer{}
+	fmt.Fprintf(out, "OVERALL: %d results\n", len(r))
+
+	var err error
+	if err = resultsToText(out, r); err != nil {
+		return []byte{}, err
+	}
+
+	buckets := CreateBuckets(r)
 	for _, bucket := range buckets {
 		fmt.Fprintf(out, "%s: %d results\n", bucket.String(), len(bucket.Results))
-		text, err := ReportText.Report(bucket.Results)
-		if err == nil {
-			fmt.Fprintf(out, "%s\n", text)
-		} else {
-			fmt.Fprintf(out, "%s\n", err.Error())
+		if err = resultsToText(out, bucket.Results); err != nil {
+			return []byte{}, err
 		}
 	}
 	return out.Bytes(), nil
 }
 
-// ReportText returns a computed Metrics struct as aligned, formatted text.
-var ReportText ReporterFunc = func(r Results) ([]byte, error) {
+func resultsToText(out io.Writer, r Results) error {
 	m := NewMetrics(r)
-	out := &bytes.Buffer{}
-
 	w := tabwriter.NewWriter(out, 0, 8, 2, '\t', tabwriter.StripEscape)
 	fmt.Fprintf(w, "Requests\t[total]\t%d\n", m.Requests)
 	fmt.Fprintf(w, "Duration\t[total, attack, wait]\t%s, %s, %s\n", m.Duration+m.Wait, m.Duration, m.Wait)
@@ -198,11 +202,7 @@ var ReportText ReporterFunc = func(r Results) ([]byte, error) {
 	for _, err := range m.Errors {
 		fmt.Fprintln(w, err)
 	}
-
-	if err := w.Flush(); err != nil {
-		return []byte{}, err
-	}
-	return out.Bytes(), nil
+	return w.Flush()
 }
 
 // ReportJSON writes a computed Metrics struct to as JSON
