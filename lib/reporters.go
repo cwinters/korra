@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -11,70 +12,86 @@ import (
 )
 
 type PathBucket struct {
-	Results   Results
-	pieces    []string
-	variances []int
+	Results       Results
+	method        string
+	pieces        []string
+	variantPieces []bool
 }
 
-func NewPathBucket(pathPieces []string, result *Result) PathBucket {
+var (
+	digitsPiece = regexp.MustCompile("^\\d+$")
+	trimQuery   = regexp.MustCompile("\\?.*$")
+)
+
+func NewPathBucket(pathPieces []string, result *Result) *PathBucket {
 	results := Results{result}
-	bucket := PathBucket{results, pathPieces, make([]int, len(pathPieces))}
-	fmt.Printf("Created new Path bucket [%s], variances: %s\n", pathPieces, bucket.variances)
-	return bucket
+	variantPieces := make([]bool, len(pathPieces))
+	for idx, pathPiece := range pathPieces {
+		variantPieces[idx] = digitsPiece.MatchString(pathPiece)
+	}
+	bucket := PathBucket{results, result.Method, pathPieces, variantPieces}
+	//fmt.Printf("Created new Path bucket: [URL: %s] => [Bucket: %s]\n", pathPieces, bucket.String())
+	return &bucket
 }
 
 func PathToPieces(path string) []string {
-	normalized := strings.Trim(path, "/")
+	withoutQuery := trimQuery.ReplaceAllString(path, "")
+	normalized := strings.Trim(withoutQuery, "/")
 	return strings.Split(normalized, "/")
 }
 
-func (b *PathBucket) Track(checkPieces []string, result *Result) bool {
+func (b *PathBucket) AddResult(result *Result) {
+	b.Results = append(b.Results, result)
+}
+
+func (b *PathBucket) Match(checkPieces []string, result *Result) bool {
+	if b.method != result.Method {
+		return false
+	}
 	if len(checkPieces) != len(b.pieces) {
 		return false
 	}
-	variantCount, variantIdx := 0, -1
 	for idx, toCheck := range checkPieces {
-		if toCheck != b.pieces[idx] {
-			variantCount += 1
-			variantIdx = idx
+		if !b.variantPieces[idx] && toCheck != b.pieces[idx] {
+			return false
 		}
 	}
-	if variantCount > 1 {
-		return false
-	}
-	b.variances[variantIdx] += 1
-	b.Results = append(b.Results, result)
 	return true
 }
 
 func (b *PathBucket) String() string {
 	toDisplay := make([]string, len(b.pieces))
 	for idx, piece := range b.pieces {
-		if b.variances[idx] == 0 {
-			toDisplay[idx] = piece
-		} else {
+		if b.variantPieces[idx] {
 			toDisplay[idx] = "*"
+		} else {
+			toDisplay[idx] = piece
 		}
 	}
-	return "/" + strings.Join(toDisplay, "/")
+	return fmt.Sprintf("%s /%s", b.method, strings.Join(toDisplay, "/"))
 }
 
-func CreateBuckets(results Results) []PathBucket {
-	var buckets []PathBucket
+func CreateBuckets(results Results) []*PathBucket {
+	var buckets []*PathBucket
 	for _, result := range results {
 		pathPieces := PathToPieces(result.Path)
-		foundBucket := -1
-		for idx, bucket := range buckets {
-			if bucket.Track(pathPieces, result) {
-				foundBucket = idx
-				break
-			}
-		}
-		if foundBucket == -1 {
+		matchedBucket := findPathBucket(buckets, pathPieces, result)
+		if matchedBucket == nil {
 			buckets = append(buckets, NewPathBucket(pathPieces, result))
+		} else {
+			matchedBucket.AddResult(result)
 		}
 	}
 	return buckets
+}
+
+func findPathBucket(buckets []*PathBucket, pathPieces []string, result *Result) *PathBucket {
+	for _, bucket := range buckets {
+		if bucket.Match(pathPieces, result) {
+			return bucket
+		}
+	}
+	return nil
 }
 
 // Reporter is an interface defining Report computation.
@@ -149,7 +166,13 @@ var ReportTest ReporterFunc = func(r Results) ([]byte, error) {
 	buckets := CreateBuckets(r)
 	out := &bytes.Buffer{}
 	for _, bucket := range buckets {
-		fmt.Fprintf(out, "%s: %d\n", bucket.String(), len(bucket.Results))
+		fmt.Fprintf(out, "%s: %d results\n", bucket.String(), len(bucket.Results))
+		text, err := ReportText.Report(bucket.Results)
+		if err == nil {
+			fmt.Fprintf(out, "%s\n", text)
+		} else {
+			fmt.Fprintf(out, "%s\n", err.Error())
+		}
 	}
 	return out.Bytes(), nil
 }
