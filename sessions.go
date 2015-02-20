@@ -95,6 +95,9 @@ func Sessions(opts *sessionsOpts) error {
 		korra.TLSConfig(tlsc),
 		korra.KeepAlive(opts.keepalive),
 	}
+
+	startTime := time.Now()
+
 	sessionFiles := korra.GlobInputs(fmt.Sprintf("%s/*.txt", opts.sessiond))
 	if sessions, err = readSessions(opts, sessionFiles, clientOptions, logChan); err != nil {
 		return err
@@ -135,7 +138,8 @@ func Sessions(opts *sessionsOpts) error {
 				}
 			}
 			sessionCount := len(sessions)
-			logChan <- fmt.Sprintf("%d/%d actions complete (%.2f%%); %d/%d sessions complete (%.2f%%)",
+			logChan <- fmt.Sprintf("Elapsed %s: %d/%d actions complete (%.2f%%); %d/%d sessions complete (%.2f%%)",
+				time.Since(startTime),
 				actionsDone, actionCount, (float32(actionsDone)/float32(actionCount))*100,
 				sessionsDone, sessionCount, (float32(sessionsDone)/float32(sessionCount))*100)
 		}
