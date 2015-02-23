@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,6 +128,27 @@ func newFilterGroup(filterSpecs string, results korra.Results) ResultFilterGroup
 	for _, filterSpec := range strings.Split(filterSpecs, " ") {
 		pieces := strings.Split(filterSpec, "=")
 		switch pieces[0] {
+		case "Latency":
+			latencyPieces := strings.Split(pieces[1], "-")
+			min, max := 0, 0
+			var err error
+			if latencyPieces[0] == "" {
+				max, err = strconv.Atoi(latencyPieces[1])
+			} else if latencyPieces[1] == "" {
+				min, err = strconv.Atoi(latencyPieces[0])
+			} else {
+				min, err = strconv.Atoi(latencyPieces[0])
+				if err == nil {
+					max, err = strconv.Atoi(latencyPieces[1])
+				}
+			}
+			if err != nil {
+				panic(fmt.Errorf("Bad 'Latency' filter specification [%s]: %s", pieces[1], err))
+			}
+			group.filters = append(group.filters, func(result *korra.Result) bool {
+				resultMillis := int(result.Latency) / 1000
+				return resultMillis >= min && resultMillis <= max
+			})
 		case "Method":
 			group.filters = append(group.filters, func(result *korra.Result) bool {
 				return result.Method == pieces[1]
@@ -140,16 +162,16 @@ func newFilterGroup(filterSpecs string, results korra.Results) ResultFilterGroup
 		//    Time=-1m  => (same as above)
 		//    Time=+1m => Include results from 1 minute after start to end
 		case "Time":
-			durationText := pieces[1]
+			timeSpecText := pieces[1]
 			lookback := true
-			direction := durationText[0:1]
+			direction := timeSpecText[0:1]
 			if direction == "-" || direction == "+" {
 				lookback = direction == "-"
-				durationText = durationText[1:]
+				timeSpecText = timeSpecText[1:]
 			}
-			duration, err := time.ParseDuration(durationText)
+			duration, err := time.ParseDuration(timeSpecText)
 			if err != nil {
-				panic(fmt.Errorf("Bad 'Time' filter specification: %s", err))
+				panic(fmt.Errorf("Bad 'Time' filter specification [%s]: %s", pieces[1], err))
 			}
 			anchorTime := results[0].Timestamp.Add(duration)
 			group.filters = append(group.filters, func(result *korra.Result) bool {
