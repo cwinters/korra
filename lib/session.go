@@ -47,9 +47,10 @@ type Session struct {
 	results  chan *Result
 	running  bool
 	stopper  chan struct{}
+	verbose  bool
 }
 
-func NewSession(scriptPath string, opts []func(*Attacker), logChan chan string) (*Session, error) {
+func NewSession(scriptPath string, opts []func(*Attacker), logChan chan string, verboseLogging bool) (*Session, error) {
 	var (
 		err    error
 		script *SessionScript
@@ -67,9 +68,17 @@ func NewSession(scriptPath string, opts []func(*Attacker), logChan chan string) 
 		logChan:  logChan,
 		results:  make(chan *Result),
 		stopper:  make(chan struct{}),
+		verbose:  verboseLogging,
 	}
-	session.log("CREATED")
+	session.debug("CREATED")
 	return session, nil
+}
+
+// debug sends the message to the global log only if verbose is turned on
+func (session *Session) debug(msg string) {
+	if session.verbose {
+		session.log(msg)
+	}
 }
 
 // log sends messages to the global log, prefixing it first with the session
@@ -96,7 +105,7 @@ func (session *Session) Run(log chan string) {
 		// wait for the next result (or timeout) then wrap up:
 		case <-session.stopper:
 			session.running = false
-			session.log("All done or asked to stop, waiting for next result or 5 seconds...")
+			session.debug("All done or asked to stop, waiting for next result or 5 seconds...")
 			if !session.Pretend {
 				select {
 				case result := <-session.results:
@@ -105,7 +114,7 @@ func (session *Session) Run(log chan string) {
 				}
 			}
 			enc.Close()
-			session.log("DONE")
+			session.debug("DONE")
 			return
 		}
 	}
@@ -137,7 +146,7 @@ func (session *Session) pause(pauseMillis int) {
 		session.log(fmt.Sprintf("Sleeping (pretend) (%d ms)...", pauseMillis))
 		return
 	}
-	session.log(fmt.Sprintf("Sleeping (%d ms)...", pauseMillis))
+	session.debug(fmt.Sprintf("Sleeping (%d ms)...", pauseMillis))
 	select {
 	case <-session.stopper:
 		return
@@ -159,12 +168,12 @@ func (session *Session) doHttp(action *SessionAction) {
 	for {
 		timestamp := time.Now()
 		result := session.attacker.Hit(targeter, timestamp, requests)
-		session.log(fmt.Sprintf("%d => %s %s, %d ms",
+		session.debug(fmt.Sprintf("%d => %s %s, %d ms",
 			result.Code, result.Method, result.Path, int64(result.Latency/time.Millisecond)))
 		session.results <- result
 		if target.Poller.ShouldRetry(requests, int(result.Code)) {
 			pauseMillis := target.Poller.WaitBetweenPolls
-			session.log(fmt.Sprintf("Attempt %d requires retry, %d ms pause until next poll", requests, pauseMillis))
+			session.debug(fmt.Sprintf("Attempt %d requires retry, %d ms pause until next poll", requests, pauseMillis))
 			time.Sleep(time.Duration(pauseMillis) * time.Millisecond)
 			requests += 1
 		} else {

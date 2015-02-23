@@ -36,6 +36,7 @@ func sessionsCmd() command {
 	fs.IntVar(&opts.redirects, "redirects", korra.DefaultRedirects, "Number of redirects to follow. -1 will not follow but marks as success")
 	fs.IntVar(&opts.statusSec, "status", 30, "Interval to log overall status, in seconds")
 	fs.DurationVar(&opts.timeout, "timeout", korra.DefaultTimeout, "Requests timeout")
+	fs.BoolVar(&opts.verbose, "verbose", false, "Verbose logging, show progress from every session")
 
 	return command{fs, func(args []string) error {
 		fs.Parse(args)
@@ -61,6 +62,7 @@ type sessionsOpts struct {
 	sessiond  string
 	statusSec int
 	timeout   time.Duration
+	verbose   bool
 }
 
 // sessions validates the arguments, reads in the session scripts and launches
@@ -154,7 +156,7 @@ func readSessions(opts *sessionsOpts, sessionFiles []string, clientOptions []fun
 		return sessions, errMissingDir
 	}
 	for idx, sessionFile := range sessionFiles {
-		if sessions[idx], err = korra.NewSession(sessionFile, clientOptions, log); err != nil {
+		if sessions[idx], err = korra.NewSession(sessionFile, clientOptions, log, opts.verbose); err != nil {
 			return sessions, fmt.Errorf("Error creating session script %s: %s", sessionFile, err)
 		}
 		sessions[idx].Pretend = opts.pretend
