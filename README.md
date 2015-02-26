@@ -309,13 +309,23 @@ $ ulimit -n # file descriptors
 ```
 Just pass a new number as the argument to change it. You may hit a
 system-defined cap that you as a user cannot exceed. In that case you'll have
-to talk with your sysadmin to raise them. For example, on some linux systems
-you'd create a file in `/etc/security/limits.d` with something like:
+to talk with your sysadmin to raise them.
+
+For example, on some GNU/Linux systems you'd create a file in
+`/etc/security/limits.d` with something like:
 
     * soft    nofile   32768
     * hard    nofile   32768
 
-to modify the ceiling.
+to modify the ceiling. (See
+[How do I increase the open files limit for a non-root user?](http://askubuntu.com/questions/162229/how-do-i-increase-the-open-files-limit-for-a-non-root-user)
+for more.) On OS X you should be able to do the same by editing
+`/etc/launchd.conf` with:
+
+    limit maxfiles 512 32768
+
+See [Change Mac OS X User Limits](http://www.lecentre.net/blog/archives/686)
+for more.
 
 ## Why "Korra"?
 
