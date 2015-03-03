@@ -24,7 +24,19 @@ var (
 	trimQuery   = regexp.MustCompile("\\?.*$")
 )
 
-func NewPathBucket(pathPieces []string, result *Result) *PathBucket {
+func NewPathBucketFromStrings(method string, path string) *PathBucket {
+	pathPieces := PathToPieces(path)
+	variantPieces := make([]bool, len(pathPieces))
+	for idx, pathPiece := range pathPieces {
+		variantPieces[idx] = pathPiece == "*"
+	}
+	bucket := PathBucket{Results{}, method, pathPieces, variantPieces}
+	//fmt.Printf("Created new Path bucket: [URL: %s] => [Bucket: %s]\n", pathPieces, bucket.String())
+	return &bucket
+}
+
+// NewPathBucketFromResult creates a new bucket from the path in the given Result, which becomes the first member.
+func NewPathBucketFromResult(pathPieces []string, result *Result) *PathBucket {
 	results := Results{result}
 	variantPieces := make([]bool, len(pathPieces))
 	for idx, pathPiece := range pathPieces {
@@ -60,6 +72,8 @@ func (b *PathBucket) Match(checkPieces []string, result *Result) bool {
 	return true
 }
 
+// String represents the nethod and path of this bucket as a string
+// which should be parseable by NewPathBucketFromStrings
 func (b *PathBucket) String() string {
 	toDisplay := make([]string, len(b.pieces))
 	for idx, piece := range b.pieces {
@@ -72,15 +86,29 @@ func (b *PathBucket) String() string {
 	return fmt.Sprintf("%s /%s", b.method, strings.Join(toDisplay, "/"))
 }
 
-func CreateBuckets(results Results) []*PathBucket {
+func CreateBucketsFromResults(results Results) []*PathBucket {
 	var buckets []*PathBucket
 	for _, result := range results {
 		pathPieces := PathToPieces(result.Path)
 		matchedBucket := findPathBucket(buckets, pathPieces, result)
 		if matchedBucket == nil {
-			buckets = append(buckets, NewPathBucket(pathPieces, result))
+			buckets = append(buckets, NewPathBucketFromResult(pathPieces, result))
 		} else {
 			matchedBucket.AddResult(result)
+		}
+	}
+	return buckets
+}
+
+func CreateBucketsFromSpecs(lines []string) []*PathBucket {
+	var buckets []*PathBucket
+	for _, line := range lines {
+		pieces := strings.SplitN(line, " ", 2)
+		bucket := NewPathBucketFromStrings(pieces[0], pieces[1])
+		if bucket == nil {
+			panic(fmt.Errorf("Bad bucket definition: %s", line))
+		} else {
+			buckets = append(buckets, bucket)
 		}
 	}
 	return buckets
@@ -165,6 +193,8 @@ func (h HistogramReporter) String() string {
 
 // ReportText returns a set of computed Metrics structs as aligned, formatted
 // text -- one for overall performance, and one for each URL bucket.
+//
+// TODO: enable additional parameters so we can pass a file of URLs
 var ReportText ReporterFunc = func(r Results) ([]byte, error) {
 	out := &bytes.Buffer{}
 	fmt.Fprintf(out, "OVERALL: %d results\n", len(r))
@@ -174,7 +204,7 @@ var ReportText ReporterFunc = func(r Results) ([]byte, error) {
 		return []byte{}, err
 	}
 
-	buckets := CreateBuckets(r)
+	buckets := CreateBucketsFromResults(r)
 	for _, bucket := range buckets {
 		fmt.Fprintf(out, "%s: %d results\n", bucket.String(), len(bucket.Results))
 		if err = resultsToText(out, bucket.Results); err != nil {

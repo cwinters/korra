@@ -47,8 +47,8 @@ func main() {
 const examples = `
 examples:
   korra sessions -dir=path/to/sessions > overall-status.log
-  korra report -inputs='path/to/results/*.bin' -reporter=json > metrics.json
-  korra report -inputs='path/to/results' -reporter=plot > plot.html
+  korra report -inputs='path/to/results/12*.bin' -reporter=json > metrics.json
+  korra report -inputs='path/to/results' -reporter=text 
 `
 
 type command struct {

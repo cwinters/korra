@@ -14,23 +14,35 @@ import (
 	korra "github.com/cwinters/korra/lib"
 )
 
+type reportOpts struct {
+	filters  string
+	inputs   string
+	output   string
+	reporter string
+	urlf     string
+}
+
 func reportCmd() command {
+	opts := &reportOpts{}
+
 	fs := flag.NewFlagSet("korra report", flag.ExitOnError)
-	reporter := fs.String("reporter", "text", "Reporter [text, json, plot, dump, hist[buckets]]")
-	inputs := fs.String("inputs", "", "Input files (comma separated, glob, or dir with .bin files)")
-	output := fs.String("output", "stdout", "Output file")
-	filters := fs.String("filters", "", "One or more space-separated filters to operate on subsets of the inputs")
+	fs.StringVar(&opts.filters, "filters", "", "One or more space-separated filters to operate on subsets of the inputs")
+	fs.StringVar(&opts.inputs, "inputs", "", "Input files (comma separated, glob, or dir with .bin files)")
+	fs.StringVar(&opts.output, "output", "stdout", "Report output destination (stdout*)")
+	fs.StringVar(&opts.reporter, "reporter", "text", "Reporter [text*, json, plot, dump, hist[buckets]]")
+	fs.StringVar(&opts.urlf, "urls", "", "File from which I should read URL patters for analysis; if not given I'll infer them from the results")
+
 	return command{fs, func(args []string) error {
 		fs.Parse(args)
-		return report(*reporter, *inputs, *output, *filters)
+		return report(opts)
 	}}
 }
 
 // report validates the report arguments, sets up the required resources
 // and writes the report
-func report(reporter, inputs, output, filters string) error {
+func report(opts *reportOpts) error {
 	var rep korra.Reporter
-	switch reporter {
+	switch opts.reporter {
 	case "text":
 		rep = korra.ReportText
 	case "json":
@@ -38,25 +50,25 @@ func report(reporter, inputs, output, filters string) error {
 	case "plot":
 		rep = korra.ReportPlot
 	case "hist":
-		if len(reporter) < 6 {
-			return fmt.Errorf("bad buckets: '%s'", reporter[4:])
+		if len(opts.reporter) < 6 {
+			return fmt.Errorf("bad buckets: '%s'", opts.reporter[4:])
 		}
 		var hist korra.HistogramReporter
-		if err := hist.Set(reporter[4:len(reporter)]); err != nil {
+		if err := hist.Set(opts.reporter[4:len(opts.reporter)]); err != nil {
 			return err
 		}
 		rep = hist
 	}
 
 	if rep == nil {
-		return fmt.Errorf("unknown reporter: %s", reporter)
+		return fmt.Errorf("unknown reporter: %s", opts.reporter)
 	}
 	var (
 		err error
 		in  *os.File
 		out *os.File
 	)
-	files := korra.GlobResults(inputs)
+	files := korra.GlobResults(opts.inputs)
 	srcs := make([]io.Reader, len(files))
 	for i, f := range files {
 		if in, err = korra.File(f, false); err != nil {
@@ -65,7 +77,7 @@ func report(reporter, inputs, output, filters string) error {
 		defer in.Close()
 		srcs[i] = in
 	}
-	if out, err = korra.File(output, true); err != nil {
+	if out, err = korra.File(opts.output, true); err != nil {
 		return err
 	}
 	defer out.Close()
@@ -95,7 +107,7 @@ outer:
 
 	sort.Sort(results)
 
-	results = filterResults(results, filters)
+	results = filterResults(results, opts.filters)
 	data, err := rep.Report(results)
 	if err != nil {
 		return err
