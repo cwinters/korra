@@ -36,6 +36,8 @@ the box.
 
 ## TO DO
 
+* Sample scripts
+* Discuss script generation strategy
 * Reporting rethink
     * Put URLs into buckets that you specify (or we infer) and do histograms,
       time based trends, etc.
@@ -44,7 +46,12 @@ the box.
     * Be able to output to file for pg `COPY`
     * Add request count distribution for text reporters
 * Tests (currently just brought over from Vegeta, boo)
-* Document in README: sample scripts, more discussion of generating script
+* Point sessions to URL to get tarball with data and to upload results
+   * Start 'leader' process with pointer to directory of tarballs + common key
+     followers must provide to get + report data
+   * Doles them out one at a time to followers via `/data`; follower must
+     include some unique name + common key
+   * Takes results via `/data` along with unique name + common key
 * godoc, other stuff I don't know about
 
 ## Install - CLI
@@ -271,7 +278,6 @@ __Korra__ gets the glob, not the shell. So you'll need to single-quote it:
     # OK
     $ korra validate -file 'data/*.bin'
     $ korra report -inputs 'data/user_1*.bin'
-
     
     # NOT OK
     $ korra validate -file data/*.bin
@@ -326,12 +332,12 @@ Examples against a single file and glob:
 
     $ korra validate -file user_19949.txt
     ===== FILE user_19949.txt OK
-
+    
     $ korra validate -file user_19950.txt
     ===== FILE user_19950.txt FAIL 2
     Line 2: Invalid HTTP method: POLLGET
     Line 10: Expected int as argument to PAUSE, got 'a-while'
-
+    
     $ korra validate -file 'scripts/*.txt'
     ===== FILE scripts/user_105967.txt FAIL 1
     Line 10: Expected int as argument to PAUSE, got 'a-while'
@@ -402,7 +408,10 @@ she tries. Load testing is something people rarely do, and when it's done we're
 often trying to explore the balance between features and performance, or
 between features and scaling.
 
-It's a stretch, but I'll stick with it.
+Also, since Korra can manipulate the elements you can think of korra as
+flooding your site -- or blowing it down, or burning it... you get the idea.
+
+They're stretches, but I'll stick with it.
 
 ## License
 
@@ -428,3 +437,7 @@ COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+This is a fork of the excellent [Vegeta](http://github.com/tsenart/vegeta)
+project, which is also MIT licensed.
+
