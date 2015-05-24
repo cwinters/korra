@@ -1,8 +1,12 @@
 FROM golang:1.4-onbuild
 MAINTAINER Chris Winters "chris@cwinters.com"
 
-#ADD . /app
+RUN mkdir -p /app/scripts
+WORKDIR /app/scripts
 
-# You're expected to mount your directory of scripts in /app/scripts
+# Default is to run a korra session with your directory of scripts mounted to /app/scripts
+CMD ["sessions", "-dir", "/app/scripts"]
 
-#CMD ["korra", "sessions", "-dir", "/app/scripts"]
+# Entrypoint provides for you to run reports and other commands -- the 
+# golang-onbuild container renames the binary to 'app'
+ENTRYPOINT ["app"]

@@ -47,7 +47,7 @@ the box.
 * Document in README: sample scripts, more discussion of generating script
 * godoc, other stuff I don't know about
 
-## Install
+## Install - CLI
 
 You need [go](http://golang.org/) installed and `GOBIN` in your `PATH`. Once
 that is done, run:
@@ -59,6 +59,54 @@ $ go install github.com/cwinters/korra
 
 After that run `korra` from the command-line to see if you've got everything
 setup.
+
+## Install - Docker
+
+You can also reference a Docker container and mount your scripts. You'll need
+to mount your directory of scripts to `/app/scripts`, which is where the output
+will be written as well:
+
+    $ docker run -v /path/to/myscripts:/app/scripts cwinters/korra
+
+You can also use the container to run other commands -- for example, to
+generate reports for a run from the above you can just run 'report' since the
+default for 'inputs' is the current directory and the container's working
+directory is `/app/scripts`:
+
+    $ docker run -v /path/to/myscripts:/app/scripts cwinters/korra report
+
+Here's a simple example doing both:
+
+    $ mkdir sample
+    $ echo 'GET http://cwinters.com' > sample/one.txt
+    $ ls sample
+    one.txt
+    $ docker run -v $(pwd)/sample:/app/scripts cwinters/korra
+      ...no output...
+    $ ls sample
+    one.bin one.txt
+    $ docker run -v $(pwd)/sample/app/scripts cwinters/korra report
+    OVERALL: 1 results
+    Requests	[total]				1
+    Duration	[total, attack, wait]		136.790285ms, 0, 136.790285ms
+    Latencies	[mean, 50, 95, 99, max]		136.790285ms, 136.790285ms, 136.790285ms, 136.790285ms, 136.790285ms
+    Bytes In	[total, mean]			0, 0.00
+    Bytes Out	[total, mean]			0, 0.00
+    Success		[ratio]				100.00%
+    Status Codes	[code:count]			200:1
+    Error Set:
+    GET /: 1 results
+    Requests	[total]				1
+    Duration	[total, attack, wait]		136.790285ms, 0, 136.790285ms
+    Latencies	[mean, 50, 95, 99, max]		136.790285ms, 136.790285ms, 136.790285ms, 136.790285ms, 136.790285ms
+    Bytes In	[total, mean]			0, 0.00
+    Bytes Out	[total, mean]			0, 0.00
+    Success		[ratio]				100.00%
+    Status Codes	[code:count]			200:1
+    Error Set:
+
+That doesn't exercise much __Korra__ functionality, but it gives you an idea of
+how easy it is to run with containers.
 
 ## Scripts
 
