@@ -68,23 +68,33 @@ will be written as well:
 
     $ docker run -v /path/to/myscripts:/app/scripts cwinters/korra
 
-You can also use the container to run other commands -- for example, to
-generate reports for a run from the above you can just run 'report' since the
-default for 'inputs' is the current directory and the container's working
-directory is `/app/scripts`:
+You can also use the container to run other commands -- for example, you can
+validate your scripts:
+
+    $ docker run -v /path/to/myscripts:/app/scripts cwinters/korra validate
+
+Or generate reports:
 
     $ docker run -v /path/to/myscripts:/app/scripts cwinters/korra report
 
-Here's a simple example doing both:
+These simple commands work because many commands default to the current working
+directory for inputs, and the container sets its `WORKDIR` to `/app/scripts`.
+
+Here's a simple example executing a script and running a report on it:
 
     $ mkdir sample
+    
     $ echo 'GET http://cwinters.com' > sample/one.txt
+    
     $ ls sample
     one.txt
+    
     $ docker run -v $(pwd)/sample:/app/scripts cwinters/korra
       ...no output...
+    
     $ ls sample
     one.bin one.txt
+    
     $ docker run -v $(pwd)/sample/app/scripts cwinters/korra report
     OVERALL: 1 results
     Requests	[total]				1

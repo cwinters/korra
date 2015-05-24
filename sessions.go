@@ -27,7 +27,7 @@ func sessionsCmd() command {
 	}
 
 	fs.StringVar(&opts.certf, "cert", "", "x509 Certificate file")
-	fs.StringVar(&opts.sessiond, "dir", "", "Directory of sessions")
+	fs.StringVar(&opts.sessiond, "dir", ".", "Directory of sessions")
 	fs.Var(&opts.headers, "header", "Request header")
 	fs.BoolVar(&opts.keepalive, "keepalive", true, "Use persistent connections")
 	fs.Var(&opts.laddr, "laddr", "Local IP address")

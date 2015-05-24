@@ -16,7 +16,7 @@ type validateOpts struct {
 func validateCmd() command {
 	fs := flag.NewFlagSet("korra validate ", flag.ExitOnError)
 	opts := &validateOpts{}
-	fs.StringVar(&opts.validateg, "file", "", "File or glob of files to validate")
+	fs.StringVar(&opts.validateg, "file", ".", "File or glob of files to validate")
 	fs.BoolVar(&opts.verbose, "verbose", false, "Display all targets, not just errored ones")
 
 	return command{fs, func(args []string) error {
