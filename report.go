@@ -27,7 +27,7 @@ func reportCmd() command {
 
 	fs := flag.NewFlagSet("korra report", flag.ExitOnError)
 	fs.StringVar(&opts.filters, "filters", "", "One or more space-separated filters to operate on subsets of the inputs")
-	fs.StringVar(&opts.inputs, "inputs", "", "Input files (comma separated, glob, or dir with .bin files)")
+	fs.StringVar(&opts.inputs, "inputs", ".", "Input files (comma separated, glob, or dir with .bin files)")
 	fs.StringVar(&opts.output, "output", "stdout", "Report output destination (stdout*)")
 	fs.StringVar(&opts.reporter, "reporter", "text", "Reporter [text*, json, plot, dump, hist[buckets]]")
 	fs.StringVar(&opts.urlf, "urls", "", "File from which I should read URL patters for analysis; if not given I'll infer them from the results")
