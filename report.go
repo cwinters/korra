@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ type reportOpts struct {
 	inputs   string
 	output   string
 	reporter string
+	showurls bool
 	urlf     string
 }
 
@@ -30,6 +32,7 @@ func reportCmd() command {
 	fs.StringVar(&opts.inputs, "inputs", ".", "Input files (comma separated, glob, or dir with .bin files; cwd*)")
 	fs.StringVar(&opts.output, "output", "stdout", "Report output destination (stdout*)")
 	fs.StringVar(&opts.reporter, "reporter", "text", "Reporter [text*, json, plot, dump, hist[buckets]]")
+	fs.BoolVar(&opts.showurls, "show-urls", false, "If true show all URLs in bucket -- may be long! (false*)")
 	fs.StringVar(&opts.urlf, "urls", "", "File from which I should read URL patterns for analysis; if not given I'll infer them from the results")
 
 	return command{fs, func(args []string) error {
@@ -38,24 +41,45 @@ func reportCmd() command {
 	}}
 }
 
-func chooseReporter(reporterSpec string) (korra.Reporter, error) {
-	switch reporterSpec {
+func chooseReporter(opts *reportOpts) (korra.Reporter, error) {
+	var err error
+	switch opts.reporter {
 	case "text":
-		return korra.TextReporter{}, nil
+		if opts.urlf == "" {
+			return korra.TextReporter{ShowUrls: opts.showurls}, nil
+		}
+		var in io.Reader
+		if in, err = korra.File(opts.urlf, false); err != nil {
+			return nil, fmt.Errorf("bad URL pattern file: '%s'", err)
+		}
+		urls := make([]string, 0)
+		scanner := bufio.NewScanner(in)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			urls = append(urls, line)
+		}
+		buckets := korra.BucketCollection{}
+		if err = buckets.CreateBucketsFromSpecs(urls); err != nil {
+			return nil, err
+		}
+		return korra.TextReporter{Collection: buckets, ShowUrls: opts.showurls}, nil
 	case "json":
 		return korra.ReportJSON, nil
 	case "hist":
-		if len(reporterSpec) < 6 {
-			return nil, fmt.Errorf("bad buckets: '%s'", reporterSpec[4:])
+		if len(opts.reporter) < 6 {
+			return nil, fmt.Errorf("bad buckets: '%s'", opts.reporter[4:])
 		}
 		var hist korra.HistogramReporter
-		if err := hist.Set(reporterSpec[4:len(reporterSpec)]); err != nil {
+		if err := hist.Set(opts.reporter[4:len(opts.reporter)]); err != nil {
 			return nil, err
 		}
 		return hist, nil
 	}
 
-	return nil, fmt.Errorf("unknown reporter: %s", reporterSpec)
+	return nil, fmt.Errorf("unknown reporter: %s", opts.reporter)
 }
 
 // report validates the report arguments, sets up the required resources
@@ -67,7 +91,7 @@ func report(opts *reportOpts) error {
 		out *os.File
 		rep korra.Reporter
 	)
-	if rep, err = chooseReporter(opts.reporter); err != nil {
+	if rep, err = chooseReporter(opts); err != nil {
 		return err
 	}
 	files := korra.GlobResults(opts.inputs)

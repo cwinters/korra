@@ -4,21 +4,23 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync/atomic"
 )
 
 type BucketCollection struct {
-	buckets []*PathBucket
+	buckets        []*PathBucket
+	catchAllBucket *PathBucket
 }
 
 func NewBucketCollection() BucketCollection {
-	return BucketCollection{make([]*PathBucket, 0)}
+	return BucketCollection{make([]*PathBucket, 0), nil}
 }
 
 func (bc *BucketCollection) Buckets() []*PathBucket {
 	return bc.buckets
 }
 
-func (bc *BucketCollection) CreateBucketsFromResults(results Results) {
+func (bc *BucketCollection) AddResults(results Results) {
 	for _, result := range results {
 		pathPieces := pathToPieces(result.Path)
 		matchedBucket := bc.findPathBucket(pathPieces, result)
@@ -30,20 +32,35 @@ func (bc *BucketCollection) CreateBucketsFromResults(results Results) {
 	}
 }
 
-func (bc *BucketCollection) CreateBucketsFromSpecs(lines []string) {
+func (bc *BucketCollection) CatchAllBucket() *PathBucket {
+	return bc.catchAllBucket
+}
+
+func (bc *BucketCollection) CreateBucketsFromSpecs(lines []string) error {
 	for _, line := range lines {
 		pieces := strings.SplitN(line, " ", 2)
+		if len(pieces) != 2 {
+			if pieces[0] == "*" {
+				bc.catchAllBucket = NewPathBucketCatchAll()
+			} else {
+				return fmt.Errorf("Bad bucket definition, expect METHOD PATH, got '%s'", line)
+			}
+		}
+
 		bucket := NewPathBucketFromStrings(pieces[0], pieces[1])
 		if bucket == nil {
-			panic(fmt.Errorf("Bad bucket definition: %s", line))
+			return fmt.Errorf("Bad bucket definition: %s", line)
 		} else {
 			bc.buckets = append(bc.buckets, bucket)
 		}
 	}
-}
 
-func (bc *BucketCollection) Length() int {
-	return len(bc.buckets)
+	// see if there's a catch-all bucket, and if not add one
+	if bc.catchAllBucket == nil {
+		bc.catchAllBucket = NewPathBucketCatchAll()
+	}
+
+	return nil
 }
 
 func (bc *BucketCollection) findPathBucket(pathPieces []string, result *Result) *PathBucket {
@@ -52,7 +69,7 @@ func (bc *BucketCollection) findPathBucket(pathPieces []string, result *Result) 
 			return bucket
 		}
 	}
-	return nil
+	return bc.catchAllBucket // either actual catch-all or nil is fine as return
 }
 
 // PathBucket is a grouping of results by their path and method; each
@@ -60,10 +77,11 @@ func (bc *BucketCollection) findPathBucket(pathPieces []string, result *Result) 
 // '/foo/details/12' and '/foo/details/18591' may be in the same bucket
 // because they vary only by the last piece of the path.
 type PathBucket struct {
-	Results       Results  // all the results maching this method + path
-	method        string   // HTTP method for these results
-	pieces        []string // path broken into pieces
-	variantPieces []bool   // true/false for each piece of the path; true means it can vary
+	Results       Results           // all the results maching this method + path
+	method        string            // HTTP method for these results
+	pieces        []string          // path broken into pieces
+	variantPieces []bool            // true/false for each piece of the path; true means it can vary
+	Urls          map[string]uint32 // track URL counts in this bucket
 }
 
 var (
@@ -71,13 +89,17 @@ var (
 	trimQuery   = regexp.MustCompile("\\?.*$")
 )
 
+func NewPathBucketCatchAll() *PathBucket {
+	return &PathBucket{make([]*Result, 0), "*", []string{"*"}, []bool{true}, make(map[string]uint32)}
+}
+
 func NewPathBucketFromStrings(method string, path string) *PathBucket {
 	pathPieces := pathToPieces(path)
 	variantPieces := make([]bool, len(pathPieces))
 	for idx, pathPiece := range pathPieces {
 		variantPieces[idx] = pathPiece == "*"
 	}
-	bucket := PathBucket{Results{}, method, pathPieces, variantPieces}
+	bucket := PathBucket{Results{}, method, pathPieces, variantPieces, make(map[string]uint32)}
 	//fmt.Printf("Created new Path bucket: [URL: %s] => [Bucket: %s]\n", pathPieces, bucket.String())
 	return &bucket
 }
@@ -91,7 +113,8 @@ func NewPathBucketFromResult(pathPieces []string, result *Result) *PathBucket {
 	for idx, pathPiece := range pathPieces {
 		variantPieces[idx] = digitsPiece.MatchString(pathPiece)
 	}
-	bucket := PathBucket{results, result.Method, pathPieces, variantPieces}
+	bucket := PathBucket{results, result.Method, pathPieces, variantPieces, make(map[string]uint32)}
+	bucket.Urls["/"+strings.Join(pathPieces, "/")] = 1
 	//fmt.Printf("Created new Path bucket: [URL: %s] => [Bucket: %s]\n", pathPieces, bucket.String())
 	return &bucket
 }
@@ -104,6 +127,15 @@ func pathToPieces(path string) []string {
 
 func (b *PathBucket) AddResult(result *Result) {
 	b.Results = append(b.Results, result)
+	// there's a race condition here when multiple goroutines are
+	// adding a result with the same url to the bucket and the url
+	// hasn't been seen before; result is off-by-one error in the urls
+	// mapped to the bucket, which isn't a big deal right now (IMO)
+	if val, ok := b.Urls[result.Path]; ok {
+		b.Urls[result.Path] = atomic.AddUint32(&val, 1)
+	} else {
+		b.Urls[result.Path] = 1
+	}
 }
 
 func (b *PathBucket) Match(checkPieces []string, result *Result) bool {

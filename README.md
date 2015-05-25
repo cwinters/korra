@@ -39,8 +39,8 @@ the box.
 * Sample scripts
 * Discuss script generation strategy
 * Reporting rethink
-    * Put URLs into buckets that you specify (or we infer) and do histograms,
-      time based trends, etc.
+    * Do histograms and time based trends for URL buckets -- that is, use
+      them in places other than text reporter
     * Time based trends across URLs
     * Filters for reporting and dump (keep this?)
     * Be able to output to file for pg `COPY`
@@ -54,7 +54,7 @@ the box.
    * Takes results via `/data` along with unique name + common key
 * godoc, other stuff I don't know about
 
-## Install - CLI
+## Install and Run: CLI
 
 You need [go](http://golang.org/) installed and `GOBIN` in your `PATH`. Once
 that is done, run:
@@ -67,7 +67,7 @@ $ go install github.com/cwinters/korra
 After that run `korra` from the command-line to see if you've got everything
 setup.
 
-## Install - Docker
+## Install and Run: Docker
 
 You can also reference a Docker container and mount your scripts. You'll need
 to mount your directory of scripts to `/app/scripts`, which is where the output
@@ -358,14 +358,69 @@ on creating some useful summaries and allowing some configuration of them
 (i.e., defining the URL patterns to cut across) and then allowing you to export
 data to formats you can use in other tools.
 
+One thing you can do is define URL buckets we'll report on. If you don't
+provide them we'll try to infer patterns from what we see -- which is
+rudimentary right now, just looking at digit-only path pieces and treating
+those as variable.
+
+If you define them yourself just put one method and pattern per line in a file
+and reference that file from the `report` command. A pattern is a URL path with
+a `*` where paths may vary.
+
+For example, the following would group blog posts by month:
+
+    GET /2015/04/*/*
+    GET /2015/03/*/*
+    GET /2015/02/*/*
+    GET /2015/01/*/*
+    GET /2014/12/*/*
+    GET /2014/11/*/*
+    GET /2014/10/*/*
+
+And if you run a report with `-show-urls` you might see output like this:
+
+    GET /2015/02/*/*: 4 results
+    Requests	[total]				4
+    Duration	[total, attack, wait]		200.747558ms, 130.282399ms, 70.465159ms
+    Latencies	[mean, 50, 95, 99, max]		83.355554ms, 79.039844ms, 85.634748ms, 85.634748ms, 98.282467ms
+    Bytes In	[total, mean]			0, 0.00
+    Bytes Out	[total, mean]			0, 0.00
+    Success		[ratio]				100.00%
+    Status Codes	[code:count]			200:4
+    Error Set:
+    URLs in bucket:
+    	/2015/02/01/some-follow-ups.html: 2
+    	/2015/02/28/spreadsheets.html: 2
+    GET /2015/01/*/*: 21 results
+    Requests	[total]				21
+    Duration	[total, attack, wait]		1.231406471s, 1.165029385s, 66.377086ms
+    Latencies	[mean, 50, 95, 99, max]		77.709283ms, 78.112329ms, 87.614862ms, 87.93501ms, 89.317957ms
+    Bytes In	[total, mean]			0, 0.00
+    Bytes Out	[total, mean]			0, 0.00
+    Success		[ratio]				100.00%
+    Status Codes	[code:count]			200:21
+    Error Set: (empty)
+    URLs in bucket:
+    	/2015/01/07/til-aggregate-and-aws.html: 2
+    	/2015/01/08/thinking-about-multitasking.html: 2
+    	/2015/01/09/til-bash-n-stuff.html: 2
+    	/2015/01/13/til-newrelic-venv-hamartia.html: 3
+    	/2015/01/21/tir-psql-export-csv.html: 3
+    	/2015/01/24/iphone-keyboards.html: 3
+    	/2015/01/25/making-waffles.html: 3
+
+You don't need to create patterns that cover every URL that might come up during
+your run. Behind the scenes we'll create a 'catch-all' bucket, and every result
+that doesn't match your pre-defined patterns will go into that bucket.
+
 ## Limitations
 
-You could be CPU bound (unlikely), memory bound (more likely) or
-have system resource limits being reached which ought to be tuned for
-the process execution. The important limit for us is file descriptors -- for
-every concurrent session we have one filehandle open, plus potentially one
-network handle. On a UNIX system you can get and set the current
-soft-limit values for a user:
+Test runs generally don't tax your system too much. They could be CPU bound
+or memory bound, but it's much more likely that you'll run into limits on file
+descriptors -- for every concurrent session we have one filehandle open, plus
+potentially one network handle.
+
+On a UNIX system you can get and set the current soft-limit values for a user:
 
 ```shell
 $ ulimit -n # file descriptors
@@ -383,8 +438,9 @@ For example, on some GNU/Linux systems you'd create a file in
 
 to modify the ceiling. (See
 [How do I increase the open files limit for a non-root user?](http://askubuntu.com/questions/162229/how-do-i-increase-the-open-files-limit-for-a-non-root-user)
-for more.) On OS X you should be able to do the same by editing
-`/etc/launchd.conf` with:
+for more.)
+
+On OS X you should be able to do the same by editing `/etc/launchd.conf` with:
 
     limit maxfiles 512 32768
 
@@ -403,12 +459,14 @@ had recently ended so it was on my mind.
 
 First, I thought it would be great to pick a female character. But more
 specifically, Korra as the Avatar strives to bring balance to the world. She
-doesn't always know how to do it, or even make it possible once she does. But
-she tries. Load testing is something people rarely do, and when it's done we're
-often trying to explore the balance between features and performance, or
-between features and scaling.
+doesn't always know how to do it, and even when she does know she struggles to
+make it happen and deal with the consequences. But she tries.
 
-Also, since Korra can manipulate the elements you can think of korra as
+Load testing is something people rarely do, and when it's done we're often
+trying to explore the balance between features and performance, or between
+features and scaling.
+
+Also, since Korra can manipulate the elements you can think of __Korra__ as
 flooding your site -- or blowing it down, or burning it... you get the idea.
 
 They're stretches, but I'll stick with it.

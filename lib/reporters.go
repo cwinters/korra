@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -79,41 +80,43 @@ func (h HistogramReporter) String() string {
 	return "[" + strings.Join(strs, ",") + "]"
 }
 
-// ReportText returns a set of computed Metrics structs as aligned, formatted
+// TextReporter returns a set of computed Metrics structs as aligned, formatted
 // text -- one for overall performance, and one for each URL bucket.
-//
-// TODO: enable additional parameters so we can pass a file of URLs
 type TextReporter struct {
-	collection BucketCollection
-}
-
-func NewTextReporter() *TextReporter {
-	return &TextReporter{NewBucketCollection()}
+	Collection BucketCollection
+	ShowUrls   bool
 }
 
 func (tr TextReporter) Report(r Results) ([]byte, error) {
+	var err error
+
+	// first display overall results
 	out := &bytes.Buffer{}
 	fmt.Fprintf(out, "OVERALL: %d results\n", len(r))
-
-	var err error
-	if err = resultsToText(out, r); err != nil {
+	if err = resultsToText(out, tr.ShowUrls, r, make(map[string]uint32)); err != nil {
 		return []byte{}, err
 	}
 
-	if tr.collection.Length() == 0 {
-		tr.collection.CreateBucketsFromResults(r)
-	}
+	// then display results per URL bucket
+	// ...if no buckets infer from results
+	tr.Collection.AddResults(r)
 
-	for _, bucket := range tr.collection.Buckets() {
+	// ...then display results for each
+	for _, bucket := range tr.Collection.Buckets() {
 		fmt.Fprintf(out, "%s: %d results\n", bucket.String(), len(bucket.Results))
-		if err = resultsToText(out, bucket.Results); err != nil {
+		if err = resultsToText(out, tr.ShowUrls, bucket.Results, bucket.Urls); err != nil {
 			return []byte{}, err
 		}
+	}
+	catchAll := tr.Collection.CatchAllBucket()
+	if catchAll != nil && len(catchAll.Results) > 0 {
+		fmt.Fprintf(out, "Remaining: %d results\n", len(catchAll.Results))
+		resultsToText(out, tr.ShowUrls, catchAll.Results, catchAll.Urls)
 	}
 	return out.Bytes(), nil
 }
 
-func resultsToText(out io.Writer, r Results) error {
+func resultsToText(out io.Writer, showUrls bool, r Results, urlCounts map[string]uint32) error {
 	m := NewMetrics(r)
 	w := tabwriter.NewWriter(out, 0, 8, 2, '\t', tabwriter.StripEscape)
 	fmt.Fprintf(w, "Requests\t[total]\t%d\n", m.Requests)
@@ -127,9 +130,26 @@ func resultsToText(out io.Writer, r Results) error {
 	for code, count := range m.StatusCodes {
 		fmt.Fprintf(w, "%s:%d  ", code, count)
 	}
-	fmt.Fprintln(w, "\nError Set:")
+	errorCount := strconv.Itoa(len(m.Errors))
+	if errorCount == "0" {
+		errorCount = "(empty)"
+	}
+	fmt.Fprintf(w, "\nError Set: %s\n", errorCount)
 	for _, err := range m.Errors {
 		fmt.Fprintln(w, err)
+	}
+	if showUrls {
+		fmt.Fprintf(w, "URLs in bucket:\n")
+		sorted := make([]string, len(urlCounts))
+		idx := 0
+		for url, _ := range urlCounts {
+			sorted[idx] = url
+			idx++
+		}
+		sort.Strings(sorted)
+		for _, url := range sorted {
+			fmt.Fprintf(w, "\t%s: %d\n", url, urlCounts[url])
+		}
 	}
 	return w.Flush()
 }
