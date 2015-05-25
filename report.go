@@ -27,10 +27,10 @@ func reportCmd() command {
 
 	fs := flag.NewFlagSet("korra report", flag.ExitOnError)
 	fs.StringVar(&opts.filters, "filters", "", "One or more space-separated filters to operate on subsets of the inputs")
-	fs.StringVar(&opts.inputs, "inputs", ".", "Input files (comma separated, glob, or dir with .bin files)")
+	fs.StringVar(&opts.inputs, "inputs", ".", "Input files (comma separated, glob, or dir with .bin files; cwd*)")
 	fs.StringVar(&opts.output, "output", "stdout", "Report output destination (stdout*)")
 	fs.StringVar(&opts.reporter, "reporter", "text", "Reporter [text*, json, plot, dump, hist[buckets]]")
-	fs.StringVar(&opts.urlf, "urls", "", "File from which I should read URL patters for analysis; if not given I'll infer them from the results")
+	fs.StringVar(&opts.urlf, "urls", "", "File from which I should read URL patterns for analysis; if not given I'll infer them from the results")
 
 	return command{fs, func(args []string) error {
 		fs.Parse(args)
@@ -38,36 +38,38 @@ func reportCmd() command {
 	}}
 }
 
+func chooseReporter(reporterSpec string) (korra.Reporter, error) {
+	switch reporterSpec {
+	case "text":
+		return korra.TextReporter{}, nil
+	case "json":
+		return korra.ReportJSON, nil
+	case "hist":
+		if len(reporterSpec) < 6 {
+			return nil, fmt.Errorf("bad buckets: '%s'", reporterSpec[4:])
+		}
+		var hist korra.HistogramReporter
+		if err := hist.Set(reporterSpec[4:len(reporterSpec)]); err != nil {
+			return nil, err
+		}
+		return hist, nil
+	}
+
+	return nil, fmt.Errorf("unknown reporter: %s", reporterSpec)
+}
+
 // report validates the report arguments, sets up the required resources
 // and writes the report
 func report(opts *reportOpts) error {
-	var rep korra.Reporter
-	switch opts.reporter {
-	case "text":
-		rep = korra.ReportText
-	case "json":
-		rep = korra.ReportJSON
-	case "plot":
-		rep = korra.ReportPlot
-	case "hist":
-		if len(opts.reporter) < 6 {
-			return fmt.Errorf("bad buckets: '%s'", opts.reporter[4:])
-		}
-		var hist korra.HistogramReporter
-		if err := hist.Set(opts.reporter[4:len(opts.reporter)]); err != nil {
-			return err
-		}
-		rep = hist
-	}
-
-	if rep == nil {
-		return fmt.Errorf("unknown reporter: %s", opts.reporter)
-	}
 	var (
 		err error
 		in  *os.File
 		out *os.File
+		rep korra.Reporter
 	)
+	if rep, err = chooseReporter(opts.reporter); err != nil {
+		return err
+	}
 	files := korra.GlobResults(opts.inputs)
 	srcs := make([]io.Reader, len(files))
 	for i, f := range files {

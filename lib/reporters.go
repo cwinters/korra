@@ -5,123 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 )
-
-type PathBucket struct {
-	Results       Results
-	method        string
-	pieces        []string
-	variantPieces []bool
-}
-
-var (
-	digitsPiece = regexp.MustCompile("^\\d+$")
-	trimQuery   = regexp.MustCompile("\\?.*$")
-)
-
-func NewPathBucketFromStrings(method string, path string) *PathBucket {
-	pathPieces := PathToPieces(path)
-	variantPieces := make([]bool, len(pathPieces))
-	for idx, pathPiece := range pathPieces {
-		variantPieces[idx] = pathPiece == "*"
-	}
-	bucket := PathBucket{Results{}, method, pathPieces, variantPieces}
-	//fmt.Printf("Created new Path bucket: [URL: %s] => [Bucket: %s]\n", pathPieces, bucket.String())
-	return &bucket
-}
-
-// NewPathBucketFromResult creates a new bucket from the path in the given Result, which becomes the first member.
-func NewPathBucketFromResult(pathPieces []string, result *Result) *PathBucket {
-	results := Results{result}
-	variantPieces := make([]bool, len(pathPieces))
-	for idx, pathPiece := range pathPieces {
-		variantPieces[idx] = digitsPiece.MatchString(pathPiece)
-	}
-	bucket := PathBucket{results, result.Method, pathPieces, variantPieces}
-	//fmt.Printf("Created new Path bucket: [URL: %s] => [Bucket: %s]\n", pathPieces, bucket.String())
-	return &bucket
-}
-
-func PathToPieces(path string) []string {
-	withoutQuery := trimQuery.ReplaceAllString(path, "")
-	normalized := strings.Trim(withoutQuery, "/")
-	return strings.Split(normalized, "/")
-}
-
-func (b *PathBucket) AddResult(result *Result) {
-	b.Results = append(b.Results, result)
-}
-
-func (b *PathBucket) Match(checkPieces []string, result *Result) bool {
-	if b.method != result.Method {
-		return false
-	}
-	if len(checkPieces) != len(b.pieces) {
-		return false
-	}
-	for idx, toCheck := range checkPieces {
-		if !b.variantPieces[idx] && toCheck != b.pieces[idx] {
-			return false
-		}
-	}
-	return true
-}
-
-// String represents the nethod and path of this bucket as a string
-// which should be parseable by NewPathBucketFromStrings
-func (b *PathBucket) String() string {
-	toDisplay := make([]string, len(b.pieces))
-	for idx, piece := range b.pieces {
-		if b.variantPieces[idx] {
-			toDisplay[idx] = "*"
-		} else {
-			toDisplay[idx] = piece
-		}
-	}
-	return fmt.Sprintf("%s /%s", b.method, strings.Join(toDisplay, "/"))
-}
-
-func CreateBucketsFromResults(results Results) []*PathBucket {
-	var buckets []*PathBucket
-	for _, result := range results {
-		pathPieces := PathToPieces(result.Path)
-		matchedBucket := findPathBucket(buckets, pathPieces, result)
-		if matchedBucket == nil {
-			buckets = append(buckets, NewPathBucketFromResult(pathPieces, result))
-		} else {
-			matchedBucket.AddResult(result)
-		}
-	}
-	return buckets
-}
-
-func CreateBucketsFromSpecs(lines []string) []*PathBucket {
-	var buckets []*PathBucket
-	for _, line := range lines {
-		pieces := strings.SplitN(line, " ", 2)
-		bucket := NewPathBucketFromStrings(pieces[0], pieces[1])
-		if bucket == nil {
-			panic(fmt.Errorf("Bad bucket definition: %s", line))
-		} else {
-			buckets = append(buckets, bucket)
-		}
-	}
-	return buckets
-}
-
-func findPathBucket(buckets []*PathBucket, pathPieces []string, result *Result) *PathBucket {
-	for _, bucket := range buckets {
-		if bucket.Match(pathPieces, result) {
-			return bucket
-		}
-	}
-	return nil
-}
 
 // Reporter is an interface defining Report computation.
 type Reporter interface {
@@ -195,7 +83,15 @@ func (h HistogramReporter) String() string {
 // text -- one for overall performance, and one for each URL bucket.
 //
 // TODO: enable additional parameters so we can pass a file of URLs
-var ReportText ReporterFunc = func(r Results) ([]byte, error) {
+type TextReporter struct {
+	collection BucketCollection
+}
+
+func NewTextReporter() *TextReporter {
+	return &TextReporter{NewBucketCollection()}
+}
+
+func (tr TextReporter) Report(r Results) ([]byte, error) {
 	out := &bytes.Buffer{}
 	fmt.Fprintf(out, "OVERALL: %d results\n", len(r))
 
@@ -204,8 +100,11 @@ var ReportText ReporterFunc = func(r Results) ([]byte, error) {
 		return []byte{}, err
 	}
 
-	buckets := CreateBucketsFromResults(r)
-	for _, bucket := range buckets {
+	if tr.collection.Length() == 0 {
+		tr.collection.CreateBucketsFromResults(r)
+	}
+
+	for _, bucket := range tr.collection.Buckets() {
 		fmt.Fprintf(out, "%s: %d results\n", bucket.String(), len(bucket.Results))
 		if err = resultsToText(out, bucket.Results); err != nil {
 			return []byte{}, err
@@ -239,58 +138,3 @@ func resultsToText(out io.Writer, r Results) error {
 var ReportJSON ReporterFunc = func(r Results) ([]byte, error) {
 	return json.Marshal(NewMetrics(r))
 }
-
-// ReportPlot builds up a self contained HTML page with an interactive plot
-// of the latencies of the requests. Built with http://dygraphs.com/
-var ReportPlot ReporterFunc = func(r Results) ([]byte, error) {
-	series := &bytes.Buffer{}
-	for i, point := 0, ""; i < len(r); i++ {
-		point = "[" + strconv.FormatFloat(
-			r[i].Timestamp.Sub(r[0].Timestamp).Seconds(), 'f', -1, 32) + ","
-
-		if r[i].Error == "" {
-			point += "NaN," + strconv.FormatFloat(r[i].Latency.Seconds()*1000, 'f', -1, 32) + "],"
-		} else {
-			point += strconv.FormatFloat(r[i].Latency.Seconds()*1000, 'f', -1, 32) + ",NaN],"
-		}
-
-		series.WriteString(point)
-	}
-	// Remove trailing commas
-	if series.Len() > 0 {
-		series.Truncate(series.Len() - 1)
-	}
-
-	return []byte(fmt.Sprintf(plotsTemplate, dygraphJSLibSrc(), series)), nil
-}
-
-const plotsTemplate = `<!doctype>
-<html>
-<head>
-  <title>Korra Plots</title>
-</head>
-<body>
-  <div id="latencies" style="font-family: Courier; width: 100%%; height: 600px"></div>
-  <a href="#" download="korraplot.png" onclick="this.href = document.getElementsByTagName('canvas')[0].toDataURL('image/png').replace(/^data:image\/[^;]/, 'data:application/octet-stream')">Download as PNG</a>
-  <script>
-	%s
-  </script>
-  <script>
-  new Dygraph(
-    document.getElementById("latencies"),
-    [%s],
-    {
-      title: 'Korra Plot',
-      labels: ['Seconds', 'ERR', 'OK'],
-      ylabel: 'Latency (ms)',
-      xlabel: 'Seconds elapsed',
-      showRoller: true,
-      colors: ['#FA7878', '#8AE234'],
-      legend: 'always',
-      logscale: true,
-      strokeWidth: 1.3
-    }
-  );
-  </script>
-</body>
-</html>`
