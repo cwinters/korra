@@ -102,7 +102,7 @@ Here's a simple example executing a script and running a report on it:
     $ ls sample
     one.bin one.txt
     
-    $ docker run -v $(pwd)/sample/app/scripts cwinters/korra report
+    $ docker run -v $(pwd)/sample:app/scripts cwinters/korra report
     OVERALL: 1 results
     Requests	[total]				1
     Duration	[total, attack, wait]		136.790285ms, 0, 136.790285ms
@@ -208,7 +208,7 @@ which means we'll request the given method + URL, waiting 1 second between
 polls, until the first of:
 
 * we've polled five times, or
-* we get a 200 status
+* we get a status between 200 and 299
 
 So say we've got a `GET` that will return a `204` until our resource is fully
 baked, at which point it will return a `200`. To poll for that at a two-second
@@ -248,7 +248,7 @@ milliseconds:
 
 If you verbose logging is on you'll see this logged as:
 
-    15:36:21.668284 user_112762.txt 10/31: Sleeping (30453 ms)...
+    15:36:21.668284 user_112762.txt 10/31: Sleeping (5918 ms)...
 
 Pausing has no impact on any other session, and doesn't show up in any
 transaction result.
@@ -415,10 +415,11 @@ that doesn't match your pre-defined patterns will go into that bucket.
 
 ## Limitations
 
-Test runs generally don't tax your system too much. They could be CPU bound
-or memory bound, but it's much more likely that you'll run into limits on file
-descriptors -- for every concurrent session we have one filehandle open, plus
-potentially one network handle.
+Test runs generally don't tax your system too much, unless you're running many
+tens or hundreds of thousands of concurrent sessions. While it's possible for
+them to be CPU bound or memory bound it's much more likely that you'll run into
+limits on file descriptors -- for every concurrent session we have one
+filehandle open, plus potentially one network handle.
 
 On a UNIX system you can get and set the current soft-limit values for a user:
 
@@ -436,7 +437,7 @@ For example, on some GNU/Linux systems you'd create a file in
     * soft    nofile   32768
     * hard    nofile   32768
 
-to modify the ceiling. (See
+to modify the ceiling to 32768 open file descriptors. (See
 [How do I increase the open files limit for a non-root user?](http://askubuntu.com/questions/162229/how-do-i-increase-the-open-files-limit-for-a-non-root-user)
 for more.)
 
