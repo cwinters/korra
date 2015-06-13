@@ -6,7 +6,8 @@
 
 __Korra__ builds on [Vegeta](http://github.com/tsenart/vegeta)
 to process sessions that simulate one or many users moving through a prescribed
-workflow. This is quite different from typical load testing tools, and if
+workflow. This is quite different from typical load testing tools
+, and if
 you're trying to flood your site with customers randomly browsing your product
 catalog you should use something like:
 
@@ -16,11 +17,13 @@ catalog you should use something like:
 * [Siege](http://www.joedog.org/siege-home/)
 
 or any of a number of other, far more mature tools.
+([This presentation](http://goo.gl/MTZId4) might provide
+some additional background on that.)
 
 So each concurrent session that __Korra__ processes is backed by a *script*,
 which is just an ordered sequence of simple actions. How you generate this
-script is up to you. It's a plain text format and in a straightforward format
-very similar to Vegeta, allowing custom headers and body per request along with
+script is up to you. It's plain text and in a straightforward format very
+similar to Vegeta, allowing custom headers and body per request along with
 additional directives to pause between steps, or poll a URL until a specified
 halt condition.
 
