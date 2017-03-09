@@ -146,13 +146,15 @@ An HTTP command looks like:
     http-method url
     [header-key: header-value]
     [@request-body-reference]
+    [JsonCapture key1 path]
+    [JsonCapture key2 path]
 
 The first line is common to pretty much every load testing tool -- an HTTP
 method and URL to hit. __Korra__ supports the HTTP methods: GET, HEAD, OPTIONS,
 PATCH, POST, and PUT. Adding more is fairly trivial but we need a good use case.
 
 Similar to [Vegeta](https://github.com/tsenart/vegeta) __Korra__ supports
-custom headers and bodies per-request.  Headers are sent as-is, though we trim
+custom headers and bodies per-request. Headers are sent as-is, though we trim
 any leading and trailing whitespace from both the key and value. Empty values
 are not allowed, and invalid request body references will prevent __Korra__
 from starting. You can check both with the `validate` command (see below).
@@ -188,6 +190,49 @@ entries in the log like:
 
     15:36:53.542024 user_110213.txt 8/23: 200 => GET /pages/students/answers/4321, 374 ms
     15:36:53.543519 user_112635.txt 11/19: 201 => POST /api/assignments/7654/share, 53 ms
+
+Finally, you can also capture data from each response and use them in later
+requests. Currently the capture method only works with JSON responses.
+
+Here's an example where we send a login request and capture the
+`user.login_token` key into the record key `login_token`:
+
+    POST http://link.to/login
+    Content-Type: application/json
+    @post/user_4512/1.json
+    JsonCapture login_token $.user.login_token
+
+We can then use it in later requests in a header:
+
+    POST http://link.to/your/team
+    Authorization: Token ${login_token}
+    Content-Type: application/json
+    @post/user_4512/14.json
+
+in the URL:
+
+    GET http://link.to/your/team/${login_token}
+
+or even in the content body:
+
+    POST http://link.to/your/team
+    Content-Type: application/json
+    @post/user_4512/14.json
+    --
+    post/user_4512/14.json:
+    --
+    {
+      "login_token": ${login_token},
+      "team_name": "Some team",
+      "team_type": "Ultimate"
+    }
+
+The path you use to capture is a
+[jsonpath](https://github.com/oliveagle/jsonpath). If your expression returns
+multiple values the behavior may be undetermined for some uses -- for example,
+if you use it as a header value or in a URL you'll get some sort of string
+representation that will probably not be useful to you. But you if you use
+it as a replacement in a JSON body you should get an array back.
 
 ### Polling HTTP commands
 
@@ -502,4 +547,3 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 This is a fork of the excellent [Vegeta](http://github.com/tsenart/vegeta)
 project, which is also MIT licensed.
-
